@@ -3,6 +3,7 @@ import { AudioManager } from '../game/AudioManager'
 import {
   INITIAL_LIVES,
   ballSpeedForElapsedSeconds,
+  brickRowsForWave,
   loseLife,
   randomBrickHp,
   readHighScore,
@@ -19,17 +20,18 @@ const PADDLE_WIDTH = 108
 const PADDLE_SPEED = 520
 const BALL_RADIUS = 8
 const BRICK_COLUMNS = 7
-const BRICK_ROWS = 5
 const BRICK_WIDTH = 58
 const BRICK_HEIGHT = 35
 const BRICK_GAP = 7
-const BRICK_TOP = 128
+const PLAYFIELD_TOP = 88
+const BRICK_TOP = 160
 
 export class GameScene extends Phaser.Scene {
   private state = GameState.READY
   private session!: GameSession
   private paddle!: Phaser.GameObjects.Rectangle
   private ball!: Phaser.GameObjects.Arc
+  private ballLabel!: Phaser.GameObjects.Text
   private bricks!: Phaser.Physics.Arcade.StaticGroup
   private brickViews = new Map<Phaser.GameObjects.Rectangle, BrickView>()
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys
@@ -56,7 +58,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.physics.world.setBounds(0, 0, WIDTH, HEIGHT + 80)
+    this.physics.world.setBounds(8, PLAYFIELD_TOP, WIDTH - 16, HEIGHT + 80 - PLAYFIELD_TOP)
     this.cameras.main.setBackgroundColor('#070b1b')
     this.drawBackground()
 
@@ -66,6 +68,7 @@ export class GameScene extends Phaser.Scene {
       lives: INITIAL_LIVES,
       wave: 1,
       elapsedPlaySeconds: 0,
+      ballAttack: 1,
     }
 
     this.createHud()
@@ -86,6 +89,7 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     if (this.pausedByVisibility) return
+    this.ballLabel.setPosition(this.ball.x, this.ball.y)
     this.updatePaddle(delta)
 
     if (this.state === GameState.READY) {
@@ -147,6 +151,15 @@ export class GameScene extends Phaser.Scene {
     body.setCollideWorldBounds(true, 1, 1)
     body.setAllowGravity(false)
     body.onWorldBounds = true
+    this.ballLabel = this.add
+      .text(this.ball.x, this.ball.y, String(this.session.ballAttack), {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '11px',
+        fontStyle: 'bold',
+        color: '#07101e',
+      })
+      .setOrigin(0.5)
+      .setDepth(6)
     this.physics.world.on('worldbounds', (hitBody: Phaser.Physics.Arcade.Body) => {
       if (hitBody.gameObject === this.ball && this.state === GameState.PLAYING) this.audio.play('bounce')
     })
@@ -155,9 +168,10 @@ export class GameScene extends Phaser.Scene {
   private createWave(): void {
     const totalWidth = BRICK_COLUMNS * BRICK_WIDTH + (BRICK_COLUMNS - 1) * BRICK_GAP
     const startX = (WIDTH - totalWidth) / 2 + BRICK_WIDTH / 2
+    const rowCount = brickRowsForWave(this.session.wave)
     this.activeBricks = 0
 
-    for (let row = 0; row < BRICK_ROWS; row += 1) {
+    for (let row = 0; row < rowCount; row += 1) {
       for (let column = 0; column < BRICK_COLUMNS; column += 1) {
         const hp = randomBrickHp(this.session.wave)
         const x = startX + column * (BRICK_WIDTH + BRICK_GAP)
@@ -280,6 +294,7 @@ export class GameScene extends Phaser.Scene {
 
   private attachBallToPaddle(): void {
     this.ball.setPosition(this.paddle.x, PADDLE_Y - 22)
+    this.ballLabel.setPosition(this.ball.x, this.ball.y)
     const body = this.ball.body as Phaser.Physics.Arcade.Body
     body.setVelocity(0, 0)
     body.updateFromGameObject()
@@ -300,7 +315,7 @@ export class GameScene extends Phaser.Scene {
     const brick = this.brickViews.get(shape)
     if (!brick || this.time.now - brick.data.lastHitAt < 45) return
     brick.data.lastHitAt = this.time.now
-    brick.data.hp -= 1
+    brick.data.hp = Math.max(0, brick.data.hp - this.session.ballAttack)
     this.session.score = scoreForHit(this.session.score)
     this.updateHighScore()
 
@@ -406,6 +421,7 @@ export class GameScene extends Phaser.Scene {
       lives: INITIAL_LIVES,
       wave: 1,
       elapsedPlaySeconds: 0,
+      ballAttack: 1,
     }
     this.overlay.setVisible(false)
     this.restartButton.setVisible(false)

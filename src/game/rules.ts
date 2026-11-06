@@ -1,19 +1,31 @@
 import type { GameSession } from './types'
 
 export const INITIAL_LIVES = 3
-export const INITIAL_MAX_HP = 5
 export const MAX_BRICK_HP = 20
+export const MAX_BRICK_ROWS = 6
 export const HIT_SCORE = 10
 export const INITIAL_BALL_SPEED = 300
 export const BALL_SPEED_PER_SECOND = 1
 export const MAX_BALL_SPEED = 520
 
+export function brickRowsForWave(wave: number): number {
+  return Math.min(MAX_BRICK_ROWS, Math.max(1, Math.floor(wave)))
+}
+
+export function minHpForWave(wave: number): number {
+  if (wave <= 3) return 1
+  return Math.min(MAX_BRICK_HP, 1 + Math.floor(wave - 3))
+}
+
 export function maxHpForWave(wave: number): number {
-  return Math.min(MAX_BRICK_HP, INITIAL_MAX_HP + Math.max(0, wave - 1))
+  if (wave <= 3) return 3
+  return Math.min(MAX_BRICK_HP, 3 + Math.floor(wave - 3) * 2)
 }
 
 export function randomBrickHp(wave: number, random = Math.random): number {
-  return Math.floor(random() * maxHpForWave(wave)) + 1
+  const minimum = minHpForWave(wave)
+  const maximum = maxHpForWave(wave)
+  return Math.floor(random() * (maximum - minimum + 1)) + minimum
 }
 
 export function ballSpeedForElapsedSeconds(elapsedSeconds: number): number {

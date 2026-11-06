@@ -11,6 +11,7 @@ export interface GameSession {
   lives: number
   wave: number
   elapsedPlaySeconds: number
+  ballAttack: number
 }
 
 export interface BrickData {
