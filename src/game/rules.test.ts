@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ballSpeedForWave,
+  ballSpeedForElapsedSeconds,
   loseLife,
   maxHpForWave,
   randomBrickHp,
@@ -35,10 +35,12 @@ describe('breakout rules', () => {
     expect(randomBrickHp(4, () => 0.999)).toBe(8)
   })
 
-  it('increases and caps ball speed', () => {
-    expect(ballSpeedForWave(1)).toBe(360)
-    expect(ballSpeedForWave(4)).toBe(420)
-    expect(ballSpeedForWave(100)).toBe(650)
+  it('increases ball speed once per playing second and caps it', () => {
+    expect(ballSpeedForElapsedSeconds(0)).toBe(300)
+    expect(ballSpeedForElapsedSeconds(0.99)).toBe(300)
+    expect(ballSpeedForElapsedSeconds(1)).toBe(301)
+    expect(ballSpeedForElapsedSeconds(60)).toBe(360)
+    expect(ballSpeedForElapsedSeconds(999)).toBe(520)
   })
 
   it('scores hits and wave clears', () => {
@@ -47,7 +49,13 @@ describe('breakout rules', () => {
   })
 
   it('decrements lives without going below zero', () => {
-    const base: GameSession = { score: 0, highScore: 0, lives: 1, wave: 1 }
+    const base: GameSession = {
+      score: 0,
+      highScore: 0,
+      lives: 1,
+      wave: 1,
+      elapsedPlaySeconds: 0,
+    }
     expect(loseLife(base).lives).toBe(0)
     expect(loseLife({ ...base, lives: 0 }).lives).toBe(0)
   })

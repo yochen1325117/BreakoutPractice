@@ -4,6 +4,9 @@ export const INITIAL_LIVES = 3
 export const INITIAL_MAX_HP = 5
 export const MAX_BRICK_HP = 20
 export const HIT_SCORE = 10
+export const INITIAL_BALL_SPEED = 300
+export const BALL_SPEED_PER_SECOND = 1
+export const MAX_BALL_SPEED = 520
 
 export function maxHpForWave(wave: number): number {
   return Math.min(MAX_BRICK_HP, INITIAL_MAX_HP + Math.max(0, wave - 1))
@@ -13,8 +16,11 @@ export function randomBrickHp(wave: number, random = Math.random): number {
   return Math.floor(random() * maxHpForWave(wave)) + 1
 }
 
-export function ballSpeedForWave(wave: number): number {
-  return Math.min(650, 360 + Math.max(0, wave - 1) * 20)
+export function ballSpeedForElapsedSeconds(elapsedSeconds: number): number {
+  return Math.min(
+    MAX_BALL_SPEED,
+    INITIAL_BALL_SPEED + Math.floor(Math.max(0, elapsedSeconds)) * BALL_SPEED_PER_SECOND,
+  )
 }
 
 export function scoreForHit(score: number): number {

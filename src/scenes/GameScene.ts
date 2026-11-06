@@ -2,7 +2,7 @@ import Phaser from 'phaser'
 import { AudioManager } from '../game/AudioManager'
 import {
   INITIAL_LIVES,
-  ballSpeedForWave,
+  ballSpeedForElapsedSeconds,
   loseLife,
   randomBrickHp,
   readHighScore,
@@ -65,6 +65,7 @@ export class GameScene extends Phaser.Scene {
       highScore: readHighScore(window.localStorage),
       lives: INITIAL_LIVES,
       wave: 1,
+      elapsedPlaySeconds: 0,
     }
 
     this.createHud()
@@ -90,6 +91,7 @@ export class GameScene extends Phaser.Scene {
     if (this.state === GameState.READY) {
       this.attachBallToPaddle()
     } else if (this.state === GameState.PLAYING) {
+      this.session.elapsedPlaySeconds += delta / 1000
       this.normalizeBallVelocity()
       if (this.ball.y > HEIGHT + 20) this.handleMiss()
     }
@@ -287,7 +289,7 @@ export class GameScene extends Phaser.Scene {
     if (this.state !== GameState.READY || this.pausedByVisibility) return
     this.state = GameState.PLAYING
     this.statusText.setVisible(false)
-    const speed = ballSpeedForWave(this.session.wave)
+    const speed = ballSpeedForElapsedSeconds(this.session.elapsedPlaySeconds)
     const angle = Phaser.Math.DegToRad(Phaser.Math.Between(-125, -55))
     const body = this.ball.body as Phaser.Physics.Arcade.Body
     body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed)
@@ -324,7 +326,7 @@ export class GameScene extends Phaser.Scene {
     this.audio.play('bounce')
     const body = this.ball.body as Phaser.Physics.Arcade.Body
     const offset = Phaser.Math.Clamp((this.ball.x - this.paddle.x) / (PADDLE_WIDTH / 2), -1, 1)
-    const speed = ballSpeedForWave(this.session.wave)
+    const speed = ballSpeedForElapsedSeconds(this.session.elapsedPlaySeconds)
     const horizontal = offset * speed * 0.82
     const vertical = -Math.sqrt(Math.max(speed * speed - horizontal * horizontal, speed * speed * 0.3))
     body.setVelocity(horizontal || Phaser.Math.RND.sign() * 70, vertical)
@@ -334,7 +336,7 @@ export class GameScene extends Phaser.Scene {
     const body = this.ball.body as Phaser.Physics.Arcade.Body
     const velocity = body.velocity
     if (velocity.lengthSq() === 0) return
-    const targetSpeed = ballSpeedForWave(this.session.wave)
+    const targetSpeed = ballSpeedForElapsedSeconds(this.session.elapsedPlaySeconds)
     const minAxis = 70
     if (Math.abs(velocity.x) < minAxis) velocity.x = (velocity.x < 0 ? -1 : 1) * minAxis
     if (Math.abs(velocity.y) < minAxis) velocity.y = (velocity.y < 0 ? -1 : 1) * minAxis
@@ -403,6 +405,7 @@ export class GameScene extends Phaser.Scene {
       highScore: readHighScore(window.localStorage),
       lives: INITIAL_LIVES,
       wave: 1,
+      elapsedPlaySeconds: 0,
     }
     this.overlay.setVisible(false)
     this.restartButton.setVisible(false)

@@ -30,8 +30,8 @@ body {
 }
 
 #app {
-  display: grid;
-  place-items: start center;
+  position: relative;
+  display: block;
   touch-action: none;
 }
 

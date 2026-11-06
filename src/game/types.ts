@@ -10,6 +10,7 @@ export interface GameSession {
   highScore: number
   lives: number
   wave: number
+  elapsedPlaySeconds: number
 }
 
 export interface BrickData {
