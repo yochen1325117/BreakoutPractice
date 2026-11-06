@@ -47,6 +47,7 @@ export class GameScene extends Phaser.Scene {
   private audio = new AudioManager()
   private activeBricks = 0
   private dragging = false
+  private paddleDragOffset = 0
   private pausedByVisibility = false
   private pausePrompt?: Phaser.GameObjects.Text
 
@@ -220,10 +221,17 @@ export class GameScene extends Phaser.Scene {
     this.keySpace.on('down', () => this.tryLaunch())
 
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-      this.dragging = pointer.isDown
-      this.movePaddleTo(pointer.x)
+      if (!this.dragging) return
+      if (!pointer.isDown) {
+        this.dragging = false
+        return
+      }
+      this.movePaddleTo(pointer.x - this.paddleDragOffset)
     })
     this.input.on('pointerup', () => {
+      this.dragging = false
+    })
+    this.input.on('gameout', () => {
       this.dragging = false
     })
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
@@ -232,7 +240,10 @@ export class GameScene extends Phaser.Scene {
         this.resumeFromVisibilityPause()
         return
       }
-      this.movePaddleTo(pointer.x)
+      if (this.isPointerOnPaddle(pointer.x, pointer.y)) {
+        this.dragging = true
+        this.paddleDragOffset = pointer.x - this.paddle.x
+      }
       if (!this.hitInteractiveUi(pointer.x, pointer.y)) this.tryLaunch()
     })
   }
@@ -443,6 +454,16 @@ export class GameScene extends Phaser.Scene {
   private hitInteractiveUi(x: number, y: number): boolean {
     if (this.muteButton.getBounds().contains(x, y)) return true
     return this.restartButton.visible && this.restartButton.getBounds().contains(x, y)
+  }
+
+  private isPointerOnPaddle(x: number, y: number): boolean {
+    const hitArea = new Phaser.Geom.Rectangle(
+      this.paddle.x - PADDLE_WIDTH / 2 - 10,
+      this.paddle.y - 18,
+      PADDLE_WIDTH + 20,
+      36,
+    )
+    return hitArea.contains(x, y)
   }
 
   private handleVisibilityChange = (): void => {

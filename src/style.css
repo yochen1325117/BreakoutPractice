@@ -31,7 +31,7 @@ body {
 
 #app {
   display: grid;
-  place-items: center;
+  place-items: start center;
   touch-action: none;
 }
 
