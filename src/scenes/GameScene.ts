@@ -86,13 +86,15 @@ export class GameScene extends Phaser.Scene {
     this.updateHud()
     this.showRewardSelection()
 
-    this.physics.world.on('worldbounds', this.handleWorldBounds)
-    this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.checkDangerLine, this)
+    const physicsWorld = this.physics.world
+    const sceneEvents = this.events
+    physicsWorld.on('worldbounds', this.handleWorldBounds)
+    sceneEvents.on(Phaser.Scenes.Events.POST_UPDATE, this.checkDangerLine, this)
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+    sceneEvents.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       document.removeEventListener('visibilitychange', this.handleVisibilityChange)
-      this.physics.world.off('worldbounds', this.handleWorldBounds)
-      this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.checkDangerLine, this)
+      physicsWorld.off('worldbounds', this.handleWorldBounds)
+      sceneEvents.off(Phaser.Scenes.Events.POST_UPDATE, this.checkDangerLine, this)
     })
   }
 
