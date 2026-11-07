@@ -17,6 +17,7 @@ interface PlatformView {
 export interface PlatformTriggerHandlers {
   onAttack(ball: BallEntity): void
   onSplit(ball: BallEntity, platformId: string): void
+  onFire(ball: BallEntity): void
 }
 
 export class PlatformSystem {
@@ -78,7 +79,8 @@ export class PlatformSystem {
       let view = this.views.get(platform.id)
       if (!view) {
         const shape = this.scene.add.rectangle(0, 0, PLATFORM_WIDTH, PLATFORM_HEIGHT, this.color(platform), 0.9).setStrokeStyle(2, 0xffffff, 0.55).setDepth(3)
-        const label = this.scene.add.text(0, 0, platform.type === 'attack' ? '+1' : '×2', {
+        const platformLabel = platform.type === 'attack' ? '+1' : platform.type === 'split' ? '×2' : '火'
+        const label = this.scene.add.text(0, 0, platformLabel, {
           fontFamily: 'system-ui, sans-serif', fontSize: '11px', fontStyle: 'bold', color: '#ffffff',
         }).setOrigin(0.5).setDepth(4)
         shape.setData('platformId', platform.id)
@@ -184,7 +186,8 @@ export class PlatformSystem {
         const platform = placedById.get(platformId)
         if (!platform) continue
         if (platform.type === 'attack') handlers.onAttack(ball)
-        else handlers.onSplit(ball, platform.id)
+        else if (platform.type === 'split') handlers.onSplit(ball, platform.id)
+        else handlers.onFire(ball)
       }
     }
   }
@@ -207,6 +210,8 @@ export class PlatformSystem {
   }
 
   private color(platform: OwnedPlatform): number {
-    return platform.type === 'attack' ? 0xffb23d : 0xff4fb7
+    if (platform.type === 'attack') return 0xffb23d
+    if (platform.type === 'split') return 0xff4fb7
+    return 0xff5a36
   }
 }

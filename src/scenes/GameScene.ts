@@ -3,7 +3,7 @@ import { AudioManager } from '../game/AudioManager'
 import { BALL_ELEMENT_DEFINITIONS, BALL_FORM_DEFINITIONS } from '../game/BallDefinitions'
 import { BallSystem } from '../game/BallSystem'
 import { BrickSystem } from '../game/BrickSystem'
-import { DamageResolver } from '../game/DamageResolver'
+import { DamageResolver, type AppliedDamageResult } from '../game/DamageResolver'
 import { LoadoutPanel } from '../game/LoadoutPanel'
 import { PlatformSystem } from '../game/PlatformSystem'
 import { RewardSystem } from '../game/RewardSystem'
@@ -15,8 +15,9 @@ import {
   saveHighScore,
   scoreForBrickDestroyed,
   scoreForWaveClear,
+  missingBallCount,
 } from '../game/rules'
-import { GameState, type BallEntity, type GameSession, type RewardOption } from '../game/types'
+import { GameState, type BallEntity, type BrickView, type GameSession, type RewardOption } from '../game/types'
 
 const WIDTH = 480
 const HEIGHT = 800
@@ -58,9 +59,7 @@ export class GameScene extends Phaser.Scene {
   private pausedByVisibility = false
   private pausePrompt?: Phaser.GameObjects.Text
   private uiBlocking = false
-  private respawnReady = false
-  private respawnTimer?: Phaser.Time.TimerEvent
-  private autoLaunchTimer?: Phaser.Time.TimerEvent
+  private reinforcementTimer?: Phaser.Time.TimerEvent
 
   constructor() {
     super('game')
@@ -115,16 +114,12 @@ export class GameScene extends Phaser.Scene {
       this.bricks.updateDescent(delta, BRICK_DESCENT_SPEED)
       this.updateActiveBalls(speed)
       const removed = this.balls.removeFallen(HEIGHT + 20)
-      if (removed > 0) this.updateHud()
-      if (this.balls.count === 0) this.beginBallRespawn()
+      if (removed > 0) {
+        this.audio.play('miss')
+        this.updateHud()
+      }
+      if (this.balls.count < this.session.startingBallCount) this.scheduleBallReinforcement()
       return
-    }
-
-    if (this.state === GameState.BALL_RESPAWN && this.respawnReady) {
-      this.bricks.updateDescent(delta, BRICK_DESCENT_SPEED)
-      this.balls.attachAll(this.paddle.x, PADDLE_Y, this.session.paddleWidth)
-      this.balls.update(speed)
-      this.balls.commitPositions()
     }
   }
 
@@ -264,6 +259,10 @@ export class GameScene extends Phaser.Scene {
         this.audio.play('break')
         this.updateHud()
       },
+      onFire: (ball) => {
+        ball.runtime.nextHitElementId = 'fire'
+        this.audio.play('hit')
+      },
     })
     this.balls.commitPositions()
   }
@@ -272,20 +271,34 @@ export class GameScene extends Phaser.Scene {
     if (this.state !== GameState.PLAYING) return
     const brick = this.bricks.get(object)
     if (!brick) return
+    const penetrationTarget = ball.runtime.nextHitElementId === 'fire' || ball.build.elementId === 'fire'
+      ? this.bricks.findNextAlongDirection(brick, ball.runtime.previousVelocity)
+      : undefined
     const result = this.damageResolver.resolve(ball, brick)
+    if (result.elementId === 'fire' && penetrationTarget) {
+      this.createFireTrail(brick.shape.x, brick.shape.y, penetrationTarget.shape.x, penetrationTarget.shape.y)
+    }
+    this.applyBrickDamage(brick, result)
+    if (result.elementId === 'fire' && penetrationTarget && this.bricks.get(penetrationTarget.shape)) {
+      const penetrationResult = this.damageResolver.applyDamage(penetrationTarget, result.attack)
+      this.applyBrickDamage(penetrationTarget, penetrationResult)
+    }
+    this.updateHighScore()
+    if (this.bricks.count === 0) this.clearWave()
+    this.updateHud()
+  }
+
+  private applyBrickDamage(brick: BrickView, result: AppliedDamageResult): void {
     if (result.destroyed) {
       this.audio.play('break')
       this.createBreakParticles(brick.shape.x, brick.shape.y, brick.shape.fillColor)
       this.session.score = scoreForBrickDestroyed(this.session.score, brick.data.maxHp)
       this.bricks.destroy(brick)
-      this.updateHighScore()
-      if (this.bricks.count === 0) this.clearWave()
     } else {
       this.audio.play('hit')
       this.bricks.updateView(brick)
       this.tweens.add({ targets: [brick.shape, brick.label], scaleX: 1.08, scaleY: 1.08, yoyo: true, duration: 55 })
     }
-    this.updateHud()
   }
 
   private updatePaddle(delta: number): void {
@@ -300,18 +313,15 @@ export class GameScene extends Phaser.Scene {
     const half = this.session.paddleWidth / 2
     this.paddle.x = Phaser.Math.Clamp(x, half + 10, WIDTH - half - 10)
     ;(this.paddle.body as Phaser.Physics.Arcade.Body).updateFromGameObject()
-    if (this.state === GameState.READY || (this.state === GameState.BALL_RESPAWN && this.respawnReady)) {
+    if (this.state === GameState.READY) {
       this.balls.attachAll(this.paddle.x, PADDLE_Y, this.session.paddleWidth)
     }
   }
 
   private tryLaunch(targetX?: number): void {
-    const launchable = this.state === GameState.READY || (this.state === GameState.BALL_RESPAWN && this.respawnReady)
+    const launchable = this.state === GameState.READY
     if (!launchable || this.pausedByVisibility || this.uiBlocking || this.balls.count === 0) return
-    this.autoLaunchTimer?.remove(false)
-    this.autoLaunchTimer = undefined
     this.state = GameState.PLAYING
-    this.respawnReady = false
     this.statusText.setVisible(false)
     const aimOffset = targetX === undefined
       ? undefined
@@ -319,19 +329,16 @@ export class GameScene extends Phaser.Scene {
     this.balls.launch(ballSpeedForElapsedSeconds(this.session.elapsedPlaySeconds), aimOffset)
   }
 
-  private beginBallRespawn(): void {
-    if (this.state !== GameState.PLAYING) return
-    this.state = GameState.BALL_RESPAWN
-    this.respawnReady = false
-    this.audio.play('miss')
-    this.statusText.setText('所有球已掉落\n重新準備中…').setVisible(true)
-    this.respawnTimer = this.time.delayedCall(1000, () => {
-      if (this.state !== GameState.BALL_RESPAWN) return
-      this.createStartingBalls()
-      this.respawnReady = true
-      this.statusText.setText('瞄準中…\n2 秒後自動發球').setVisible(true)
+  private scheduleBallReinforcement(): void {
+    if (this.state !== GameState.PLAYING || this.reinforcementTimer) return
+    this.reinforcementTimer = this.time.delayedCall(1000, () => {
+      this.reinforcementTimer = undefined
+      if (this.state !== GameState.PLAYING) return
+      const missing = missingBallCount(this.balls.count, this.session.startingBallCount)
+      if (missing === 0) return
+      this.balls.createAttachedBatch(missing, this.paddle.x, PADDLE_Y, this.session.paddleWidth)
+      this.balls.launch(ballSpeedForElapsedSeconds(this.session.elapsedPlaySeconds))
       this.updateHud()
-      this.autoLaunchTimer = this.time.delayedCall(2000, () => this.tryLaunch())
     })
   }
 
@@ -373,9 +380,13 @@ export class GameScene extends Phaser.Scene {
       return { title: '永久攻擊 +1', description: `基礎攻擊提升至 ${this.session.ballBuild.baseAttack + 1}` }
     }
     if (reward.type === 'platform') {
-      return reward.platformType === 'attack'
-        ? { title: '強化平台', description: '每次穿越使下一擊攻擊力 +1，可累積' }
-        : { title: '分裂平台', description: '每次穿越分裂出一顆繼承永久能力的新球' }
+      if (reward.platformType === 'attack') {
+        return { title: '強化平台', description: '每次穿越使下一擊攻擊力 +1，可累積' }
+      }
+      if (reward.platformType === 'split') {
+        return { title: '分裂平台', description: '每次穿越分裂出一顆繼承永久能力的新球' }
+      }
+      return { title: '火焰平台', description: '下次命中以完整攻擊力穿透後方一塊磚' }
     }
     if (reward.type === 'paddle-width') {
       return { title: '橫桿加長', description: `橫桿長度 +20（目前 ${this.session.paddleWidth}）` }
@@ -425,7 +436,8 @@ export class GameScene extends Phaser.Scene {
       `可放置在警戒線以上，平台允許互相重疊\n` +
       `未放置的平台會保留在庫存\n\n` +
       `橘色 +1：下一次攻擊力增加\n` +
-      `粉色 ×2：球穿越時產生新球`, {
+      `粉色 ×2：球穿越時產生新球\n` +
+      `紅色 火：下次攻擊穿透一塊磚`, {
         fontFamily: 'system-ui, sans-serif', fontSize: '16px', color: '#8da6c9',
         align: 'center', lineSpacing: 7,
       }).setOrigin(0.5).setAlpha(0.72)
@@ -473,7 +485,9 @@ export class GameScene extends Phaser.Scene {
       return
     }
     const index = this.session.ownedPlatforms.findIndex((item) => item.id === selected.id) + 1
-    const type = selected.type === 'attack' ? '強化平台 +1' : '分裂平台 ×2'
+    const type = selected.type === 'attack'
+      ? '強化平台 +1'
+      : selected.type === 'split' ? '分裂平台 ×2' : '火焰平台'
     const status = selected.isPlaced ? '已放置' : '庫存中'
     this.placementSummary.setText(`${index}/${this.session.ownedPlatforms.length}　${type}　${status}　｜　已放置 ${this.platforms.placedCount}`)
   }
@@ -517,15 +531,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private checkDangerLine(): void {
-    const descending = this.state === GameState.PLAYING || (this.state === GameState.BALL_RESPAWN && this.respawnReady)
+    const descending = this.state === GameState.PLAYING
     if (descending && this.bricks.count > 0 && this.bricks.hasCrossed(DANGER_LINE_Y)) this.endGame()
   }
 
   private endGame(): void {
     if (this.state === GameState.GAME_OVER) return
     this.state = GameState.GAME_OVER
-    this.respawnTimer?.remove(false)
-    this.autoLaunchTimer?.remove(false)
+    this.reinforcementTimer?.remove(false)
+    this.reinforcementTimer = undefined
     this.balls.removeAll()
     this.updateHighScore()
     this.uiBlocking = true
@@ -561,10 +575,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createStartingBalls(): void {
-    for (let index = 0; index < this.session.startingBallCount; index += 1) {
-      this.balls.createAttached(this.paddle.x, PADDLE_Y)
-    }
-    this.balls.attachAll(this.paddle.x, PADDLE_Y, this.session.paddleWidth)
+    this.balls.createAttachedBatch(this.session.startingBallCount, this.paddle.x, PADDLE_Y, this.session.paddleWidth)
   }
 
   private syncPaddleSize(): void {
@@ -586,6 +597,15 @@ export class GameScene extends Phaser.Scene {
     })
     emitter.explode(10)
     this.time.delayedCall(420, () => emitter.destroy())
+  }
+
+  private createFireTrail(fromX: number, fromY: number, toX: number, toY: number): void {
+    const trail = this.add.graphics().setDepth(12)
+    trail.lineStyle(6, 0xff5a36, 0.9)
+    trail.lineBetween(fromX, fromY, toX, toY)
+    trail.lineStyle(2, 0xffd166, 1)
+    trail.lineBetween(fromX, fromY, toX, toY)
+    this.tweens.add({ targets: trail, alpha: 0, duration: 180, onComplete: () => trail.destroy() })
   }
 
   private hitInteractiveUi(x: number, y: number): boolean {

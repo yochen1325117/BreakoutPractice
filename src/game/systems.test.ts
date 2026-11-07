@@ -20,11 +20,11 @@ describe('damage resolver', () => {
   it('uses and clears a stacked next-hit bonus', () => {
     const ball = {
       build: { baseAttack: 2, formId: 'normal', elementId: 'neutral', modifierIds: [] },
-      runtime: { nextHitBonus: 3 },
+      runtime: { nextHitBonus: 3, nextHitElementId: 'neutral' },
     } as unknown as BallEntity
     const brick = { data: { hp: 8, maxHp: 8 } } as unknown as BrickView
     const result = new DamageResolver().resolve(ball, brick)
-    expect(result).toEqual({ damage: 5, destroyed: false })
+    expect(result).toEqual({ damage: 5, destroyed: false, attack: 5, elementId: 'neutral' })
     expect(brick.data.hp).toBe(3)
     expect(ball.runtime.nextHitBonus).toBe(0)
   })
@@ -32,21 +32,43 @@ describe('damage resolver', () => {
   it('caps reported damage at remaining brick hp', () => {
     const ball = {
       build: { baseAttack: 10, formId: 'normal', elementId: 'neutral', modifierIds: [] },
-      runtime: { nextHitBonus: 0 },
+      runtime: { nextHitBonus: 0, nextHitElementId: 'neutral' },
     } as unknown as BallEntity
     const brick = { data: { hp: 2, maxHp: 5 } } as unknown as BrickView
-    expect(new DamageResolver().resolve(ball, brick)).toEqual({ damage: 2, destroyed: true })
+    expect(new DamageResolver().resolve(ball, brick)).toEqual({
+      damage: 2, destroyed: true, attack: 10, elementId: 'neutral',
+    })
     expect(brick.data.hp).toBe(0)
+  })
+
+  it('consumes fire and exposes the full attack for one penetration hit', () => {
+    const ball = {
+      build: { baseAttack: 2, formId: 'normal', elementId: 'neutral', modifierIds: [] },
+      runtime: { nextHitBonus: 3, nextHitElementId: 'fire' },
+    } as unknown as BallEntity
+    const primary = { data: { hp: 8, maxHp: 8 } } as unknown as BrickView
+    const secondary = { data: { hp: 9, maxHp: 9 } } as unknown as BrickView
+    const resolver = new DamageResolver()
+    const result = resolver.resolve(ball, primary)
+    expect(result).toEqual({ damage: 5, destroyed: false, attack: 5, elementId: 'fire' })
+    expect(resolver.applyDamage(secondary, result.attack)).toEqual({ damage: 5, destroyed: false })
+    expect(secondary.data.hp).toBe(4)
+    expect(ball.runtime.nextHitBonus).toBe(0)
+    expect(ball.runtime.nextHitElementId).toBe('neutral')
   })
 })
 
 describe('reward system', () => {
-  it('draws two distinct, equally weighted reward types from the expanded pool', () => {
-    const values = [0, 0, 0.8]
-    const [attack, platform] = new RewardSystem(() => values.shift() ?? 0).createOptions(session())
-    expect(attack).toEqual({ type: 'permanent-attack', amount: 1 })
-    expect(platform).toEqual({ type: 'platform', platformType: 'split' })
-    expect(new Set([attack.type, platform.type]).size).toBe(2)
+  it('treats attack and split platforms as independent, equally weighted rewards', () => {
+    const values = [0.4, 0.2]
+    const [split, attack] = new RewardSystem(() => values.shift() ?? 0).createOptions(session())
+    expect(split).toEqual({ type: 'platform', platformType: 'split' })
+    expect(attack).toEqual({ type: 'platform', platformType: 'attack' })
+  })
+
+  it('offers the fire platform as its own reward entry', () => {
+    const [fire] = new RewardSystem(() => 0.5).createOptions(session())
+    expect(fire).toEqual({ type: 'platform', platformType: 'fire' })
   })
 
   it('can draw the new paddle and starting-ball options', () => {

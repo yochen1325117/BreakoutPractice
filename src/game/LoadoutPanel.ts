@@ -13,6 +13,7 @@ export class LoadoutPanel {
     this.hide()
     const attackCount = session.ownedPlatforms.filter((item) => item.type === 'attack').length
     const splitCount = session.ownedPlatforms.filter((item) => item.type === 'split').length
+    const fireCount = session.ownedPlatforms.filter((item) => item.type === 'fire').length
     const placedCount = session.ownedPlatforms.filter((item) => item.isPlaced).length
     const backdrop = this.scene.add.rectangle(this.width / 2, this.height / 2, this.width, this.height, 0x030612, 0.78).setInteractive()
     const panel = this.scene.add.rectangle(this.width / 2, this.height / 2, this.width - 44, 510, 0x091125, 0.98).setStrokeStyle(2, 0x30e5ff)
@@ -31,7 +32,8 @@ export class LoadoutPanel {
       `已擁有　　${session.ownedPlatforms.length}\n` +
       `已放置　　${placedCount}\n` +
       `強化平台　${attackCount}\n` +
-      `分裂平台　${splitCount}`, {
+      `分裂平台　${splitCount}\n` +
+      `火焰平台　${fireCount}`, {
         fontFamily: 'system-ui, sans-serif', fontSize: '19px', color: '#d8f8ff', lineSpacing: 9,
       })
     const close = this.scene.add.text(this.width / 2, 607, '關閉並繼續', {

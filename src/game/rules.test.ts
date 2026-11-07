@@ -3,12 +3,15 @@ import {
   ballSpeedForElapsedSeconds,
   ballColorForAttack,
   brickRowsForWave,
+  difficultyForWave,
+  hpCapForWave,
   maxHpForWave,
   launchAngleForAim,
+  missingBallCount,
   minHpForWave,
   randomBrickHp,
-  randomPlatformType,
   readHighScore,
+  rayRectangleDistance,
   rectanglesOverlap,
   saveHighScore,
   scoreForBrickDestroyed,
@@ -32,27 +35,31 @@ describe('breakout rules', () => {
     expect(brickRowsForWave(20)).toBe(6)
   })
 
-  it('uses wave-based minimum hp and a smoother difficulty multiplier', () => {
+  it('uses wave-based hp bounds with a dynamic squared cap', () => {
+    expect(difficultyForWave(1)).toBe(1)
+    expect(difficultyForWave(7)).toBe(1)
+    expect(difficultyForWave(8)).toBe(2)
+    expect(hpCapForWave(1)).toBe(2)
+    expect(hpCapForWave(8)).toBe(68)
     expect(minHpForWave(1)).toBe(1)
-    expect(maxHpForWave(1)).toBe(4)
+    expect(maxHpForWave(1)).toBe(2)
     expect(minHpForWave(5)).toBe(2)
     expect(maxHpForWave(5)).toBe(8)
     expect(minHpForWave(6)).toBe(3)
     expect(maxHpForWave(6)).toBe(9)
     expect(minHpForWave(7)).toBe(4)
-    expect(maxHpForWave(7)).toBe(13)
+    expect(maxHpForWave(7)).toBe(10)
     expect(minHpForWave(8)).toBe(5)
-    expect(maxHpForWave(8)).toBe(17)
-    expect(maxHpForWave(9)).toBe(20)
-    expect(minHpForWave(100)).toBe(20)
-    expect(maxHpForWave(100)).toBe(20)
+    expect(maxHpForWave(8)).toBe(22)
+    expect(minHpForWave(100)).toBe(97)
+    expect(maxHpForWave(100)).toBe(9682)
   })
 
   it('generates hp within the current wave range', () => {
     expect(randomBrickHp(1, () => 0)).toBe(1)
-    expect(randomBrickHp(1, () => 0.999)).toBe(4)
+    expect(randomBrickHp(1, () => 0.999)).toBe(2)
     expect(randomBrickHp(7, () => 0)).toBe(4)
-    expect(randomBrickHp(7, () => 0.999)).toBe(13)
+    expect(randomBrickHp(7, () => 0.999)).toBe(10)
   })
 
   it('increases ball speed once per playing second and caps it', () => {
@@ -73,16 +80,18 @@ describe('breakout rules', () => {
     expect(scoreForWaveClear(50, 3)).toBe(350)
   })
 
-  it('prefers split platforms at a 65/35 threshold', () => {
-    expect(randomPlatformType(() => 0.349)).toBe('attack')
-    expect(randomPlatformType(() => 0.35)).toBe('split')
-  })
-
   it('limits player-selected launch direction to a small angle', () => {
     expect(launchAngleForAim(-1)).toBe(-118)
     expect(launchAngleForAim(0)).toBe(-90)
     expect(launchAngleForAim(1)).toBe(-62)
     expect(launchAngleForAim(99)).toBe(-62)
+  })
+
+  it('only replenishes the deficit below the run starting-ball count', () => {
+    expect(missingBallCount(0, 1)).toBe(1)
+    expect(missingBallCount(1, 1)).toBe(0)
+    expect(missingBallCount(2, 4)).toBe(2)
+    expect(missingBallCount(8, 4)).toBe(0)
   })
 
   it('detects placement overlap with an optional gap', () => {
@@ -108,6 +117,19 @@ describe('breakout rules', () => {
       240,
       108,
       8,
+    )).toBeUndefined()
+  })
+
+  it('finds the first rectangle intersected by a directional fire ray', () => {
+    expect(rayRectangleDistance(
+      { x: 0, y: 0 },
+      { x: 0, y: 5 },
+      { x: 0, y: 10, width: 4, height: 4 },
+    )).toBe(8)
+    expect(rayRectangleDistance(
+      { x: 0, y: 0 },
+      { x: 0, y: 5 },
+      { x: 10, y: 10, width: 4, height: 4 },
     )).toBeUndefined()
   })
 

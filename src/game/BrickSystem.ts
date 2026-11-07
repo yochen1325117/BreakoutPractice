@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { brickRowsForWave, randomBrickHp } from './rules'
+import { brickRowsForWave, randomBrickHp, rayRectangleDistance } from './rules'
 import type { BrickView } from './types'
 
 const WIDTH = 480
@@ -65,6 +65,25 @@ export class BrickSystem {
   updateView(brick: BrickView): void {
     brick.label.setText(String(brick.data.hp))
     brick.shape.setFillStyle(this.colorForHp(brick.data.hp))
+  }
+
+  findNextAlongDirection(primary: BrickView, direction: Phaser.Math.Vector2): BrickView | undefined {
+    let closest: BrickView | undefined
+    let closestDistance = Number.POSITIVE_INFINITY
+    const origin = { x: primary.shape.x, y: primary.shape.y }
+    for (const candidate of this.views.values()) {
+      if (candidate === primary) continue
+      const distance = rayRectangleDistance(origin, direction, {
+        x: candidate.shape.x,
+        y: candidate.shape.y,
+        width: BRICK_WIDTH,
+        height: BRICK_HEIGHT,
+      })
+      if (distance === undefined || distance <= 0 || distance >= closestDistance) continue
+      closest = candidate
+      closestDistance = distance
+    }
+    return closest
   }
 
   destroy(brick: BrickView): void {

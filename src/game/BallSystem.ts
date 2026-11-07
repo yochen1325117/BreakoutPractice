@@ -49,7 +49,9 @@ export class BallSystem {
       build,
       runtime: {
         nextHitBonus: 0,
+        nextHitElementId: 'neutral',
         previousPosition: new Phaser.Math.Vector2(x, y),
+        previousVelocity: new Phaser.Math.Vector2(0, 0),
         insidePlatformIds: new Set(),
       },
     }
@@ -61,6 +63,18 @@ export class BallSystem {
     const ball = this.createBall(paddleX, paddleY - 22)
     ;(ball.sprite.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0)
     return ball
+  }
+
+  createAttachedBatch(count: number, paddleX: number, paddleY: number, paddleWidth = 108): BallEntity[] {
+    const total = Math.max(0, Math.floor(count))
+    const usableWidth = Math.max(0, paddleWidth - BALL_RADIUS * 4)
+    const spacing = total > 1 ? Math.min(18, usableWidth / (total - 1)) : 0
+    const created: BallEntity[] = []
+    for (let index = 0; index < total; index += 1) {
+      const offset = (index - (total - 1) / 2) * spacing
+      created.push(this.createAttached(paddleX + offset, paddleY))
+    }
+    return created
   }
 
   attachAll(paddleX: number, paddleY: number, paddleWidth = 108): void {
@@ -109,6 +123,7 @@ export class BallSystem {
       velocity.x * Math.sin(angle) + velocity.y * Math.cos(angle),
     )
     ;(clone.sprite.body as Phaser.Physics.Arcade.Body).setVelocity(rotated.x, rotated.y)
+    clone.runtime.previousVelocity.copy(rotated)
     return clone
   }
 
@@ -122,6 +137,8 @@ export class BallSystem {
       }
       const attack = ball.build.baseAttack + ball.runtime.nextHitBonus
       ball.sprite.setFillStyle(ballColorForAttack(attack))
+      if (ball.runtime.nextHitElementId === 'fire') ball.sprite.setStrokeStyle(4, 0xff6a32, 1)
+      else ball.sprite.setStrokeStyle(2, 0xffffff, 0.9)
       ball.label.setText('')
       ball.label.setPosition(ball.sprite.x, ball.sprite.y)
     }
@@ -130,6 +147,7 @@ export class BallSystem {
   commitPositions(): void {
     for (const ball of this.entities.values()) {
       ball.runtime.previousPosition.set(ball.sprite.x, ball.sprite.y)
+      ball.runtime.previousVelocity.copy((ball.sprite.body as Phaser.Physics.Arcade.Body).velocity)
     }
   }
 

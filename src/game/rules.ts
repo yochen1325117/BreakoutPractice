@@ -1,6 +1,5 @@
-import type { PlatformType, StorageLike } from './types'
+import type { StorageLike } from './types'
 
-export const MAX_BRICK_HP = 20
 export const MAX_BRICK_ROWS = 6
 export const INITIAL_BALL_SPEED = 400
 export const BALL_SPEED_PER_SECOND = 2
@@ -31,13 +30,25 @@ export function brickRowsForWave(wave: number): number {
 }
 
 export function minHpForWave(wave: number): number {
-  return Math.min(MAX_BRICK_HP, Math.max(1, Math.floor(wave) - 3))
+  const normalizedWave = Math.max(1, Math.floor(wave))
+  return Math.min(hpCapForWave(normalizedWave), Math.max(1, normalizedWave - 3))
+}
+
+export function difficultyForWave(wave: number): number {
+  const normalizedWave = Math.max(1, Math.floor(wave))
+  return Math.max(1, normalizedWave - 6)
+}
+
+export function hpCapForWave(wave: number): number {
+  const normalizedWave = Math.max(1, Math.floor(wave))
+  const difficulty = difficultyForWave(normalizedWave)
+  return normalizedWave ** 2 + difficulty ** 2
 }
 
 export function maxHpForWave(wave: number): number {
   const normalizedWave = Math.max(1, Math.floor(wave))
-  const difficulty = Math.max(1, normalizedWave - 5)
-  return Math.min(MAX_BRICK_HP, normalizedWave + 3 * difficulty)
+  const difficulty = difficultyForWave(normalizedWave)
+  return Math.min(hpCapForWave(normalizedWave), (normalizedWave + 3) * difficulty)
 }
 
 export function randomBrickHp(wave: number, random = Math.random): number {
@@ -61,12 +72,12 @@ export function scoreForWaveClear(score: number, wave: number): number {
   return score + 100 * wave
 }
 
-export function randomPlatformType(random = Math.random): PlatformType {
-  return random() < 0.35 ? 'attack' : 'split'
-}
-
 export function launchAngleForAim(aimOffset: number): number {
   return -90 + Math.min(1, Math.max(-1, aimOffset)) * 28
+}
+
+export function missingBallCount(currentCount: number, startingBallCount: number): number {
+  return Math.max(0, Math.floor(startingBallCount) - Math.max(0, Math.floor(currentCount)))
 }
 
 export interface PlacementRect { x: number; y: number; width: number; height: number }
@@ -81,6 +92,37 @@ export function rectanglesOverlap(a: PlacementRect, b: PlacementRect, gap = 0): 
 }
 
 export interface PointLike { x: number; y: number }
+export interface CenteredRectLike { x: number; y: number; width: number; height: number }
+
+export function rayRectangleDistance(
+  origin: PointLike,
+  direction: PointLike,
+  rectangle: CenteredRectLike,
+): number | undefined {
+  const magnitude = Math.hypot(direction.x, direction.y)
+  if (magnitude === 0) return undefined
+  const dx = direction.x / magnitude
+  const dy = direction.y / magnitude
+  const left = rectangle.x - rectangle.width / 2
+  const right = rectangle.x + rectangle.width / 2
+  const top = rectangle.y - rectangle.height / 2
+  const bottom = rectangle.y + rectangle.height / 2
+  let minimum = 0
+  let maximum = Number.POSITIVE_INFINITY
+
+  const updateRange = (originValue: number, directionValue: number, low: number, high: number): boolean => {
+    if (Math.abs(directionValue) < 1e-8) return originValue >= low && originValue <= high
+    const first = (low - originValue) / directionValue
+    const second = (high - originValue) / directionValue
+    minimum = Math.max(minimum, Math.min(first, second))
+    maximum = Math.min(maximum, Math.max(first, second))
+    return maximum >= minimum
+  }
+
+  if (!updateRange(origin.x, dx, left, right)) return undefined
+  if (!updateRange(origin.y, dy, top, bottom)) return undefined
+  return maximum >= 0 ? Math.max(0, minimum) : undefined
+}
 
 export function sweptPaddleCrossingX(
   previous: PointLike,

@@ -1,7 +1,6 @@
 export enum GameState {
   READY = 'READY',
   PLAYING = 'PLAYING',
-  BALL_RESPAWN = 'BALL_RESPAWN',
   WAVE_CLEAR = 'WAVE_CLEAR',
   REWARD_SELECT = 'REWARD_SELECT',
   PLATFORM_PLACEMENT = 'PLATFORM_PLACEMENT',
@@ -9,8 +8,8 @@ export enum GameState {
 }
 
 export type BallFormId = 'normal'
-export type BallElementId = 'neutral'
-export type PlatformType = 'attack' | 'split'
+export type BallElementId = 'neutral' | 'fire'
+export type PlatformType = 'attack' | 'split' | 'fire'
 
 export interface PlayerBallBuild {
   baseAttack: number
@@ -44,7 +43,9 @@ export interface BallElementDefinition {
 
 export interface BallRuntimeState {
   nextHitBonus: number
+  nextHitElementId: BallElementId
   previousPosition: Phaser.Math.Vector2
+  previousVelocity: Phaser.Math.Vector2
   insidePlatformIds: Set<string>
 }
 
