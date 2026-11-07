@@ -1,4 +1,4 @@
-import type { StorageLike } from './types'
+import type { BallElementId, PlayerBallBuild, StorageLike } from './types'
 
 export const MAX_BRICK_ROWS = 6
 export const INITIAL_BALL_SPEED = 400
@@ -7,6 +7,7 @@ export const MAX_BALL_SPEED = 520
 export const BRICK_DESCENT_SPEED = 2
 export const DANGER_LINE_Y = 650
 export const MAX_PADDLE_WIDTH = 480 * 0.7
+export const MAX_PLATFORM_WIDTH = 420
 
 const BALL_ATTACK_COLORS = [0x6df6ff, 0x668cff, 0xd85cff, 0xff6655, 0x981633]
 
@@ -78,6 +79,27 @@ export function launchAngleForAim(aimOffset: number): number {
 
 export function missingBallCount(currentCount: number, startingBallCount: number): number {
   return Math.max(0, Math.floor(startingBallCount) - Math.max(0, Math.floor(currentCount)))
+}
+
+export interface TemporaryElementState { nextHitElementId: BallElementId; speedOverride?: number }
+
+export function inheritTemporaryElement(source: TemporaryElementState, target: TemporaryElementState): void {
+  target.nextHitElementId = source.nextHitElementId
+  target.speedOverride = source.speedOverride
+}
+
+export interface SplitInheritableState {
+  build: PlayerBallBuild
+  runtime: TemporaryElementState & { nextHitBonus: number }
+}
+
+export function inheritSplitState(source: SplitInheritableState, target: SplitInheritableState): void {
+  target.build.baseAttack = source.build.baseAttack
+  target.build.formId = source.build.formId
+  target.build.elementId = source.build.elementId
+  target.build.modifierIds = [...source.build.modifierIds]
+  target.runtime.nextHitBonus = source.runtime.nextHitBonus
+  inheritTemporaryElement(source.runtime, target.runtime)
 }
 
 export interface PlacementRect { x: number; y: number; width: number; height: number }

@@ -20,6 +20,7 @@ export class DamageResolver {
     const result = this.applyDamage(brick, attack)
     ball.runtime.nextHitBonus = 0
     ball.runtime.nextHitElementId = 'neutral'
+    ball.runtime.speedOverride = undefined
     const context = { ball, brick, damage: result.damage, destroyed: result.destroyed }
     BALL_FORM_DEFINITIONS[ball.build.formId].onHit?.(context)
     BALL_ELEMENT_DEFINITIONS[elementId].onHit?.(context)

@@ -1,5 +1,6 @@
 export enum GameState {
   READY = 'READY',
+  WAVE_COUNTDOWN = 'WAVE_COUNTDOWN',
   PLAYING = 'PLAYING',
   WAVE_CLEAR = 'WAVE_CLEAR',
   REWARD_SELECT = 'REWARD_SELECT',
@@ -8,8 +9,8 @@ export enum GameState {
 }
 
 export type BallFormId = 'normal'
-export type BallElementId = 'neutral' | 'fire'
-export type PlatformType = 'attack' | 'split' | 'fire'
+export type BallElementId = 'neutral' | 'fire' | 'water' | 'wind'
+export type PlatformType = 'attack' | 'split' | 'fire' | 'water' | 'wind'
 
 export interface PlayerBallBuild {
   baseAttack: number
@@ -44,6 +45,7 @@ export interface BallElementDefinition {
 export interface BallRuntimeState {
   nextHitBonus: number
   nextHitElementId: BallElementId
+  speedOverride?: number
   previousPosition: Phaser.Math.Vector2
   previousVelocity: Phaser.Math.Vector2
   insidePlatformIds: Set<string>
@@ -74,6 +76,7 @@ export interface GameSession {
   ownedPlatforms: OwnedPlatform[]
   paddleWidth: number
   startingBallCount: number
+  platformWidth: number
 }
 
 export interface BrickData {
@@ -94,6 +97,7 @@ export type RewardOption =
   | { type: 'permanent-attack'; amount: 1 }
   | { type: 'platform'; platformType: PlatformType }
   | { type: 'paddle-width'; amount: number }
+  | { type: 'platform-width'; amount: number }
   | { type: 'starting-ball'; amount: 1 }
 
 export interface StorageLike {

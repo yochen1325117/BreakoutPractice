@@ -86,6 +86,13 @@ export class BrickSystem {
     return closest
   }
 
+  findHorizontalNeighbors(primary: BrickView): BrickView[] {
+    const columns = new Set([primary.data.column - 1, primary.data.column + 1])
+    return [...this.views.values()].filter((candidate) =>
+      candidate.data.row === primary.data.row && columns.has(candidate.data.column),
+    )
+  }
+
   destroy(brick: BrickView): void {
     this.views.delete(brick.shape)
     this.group.remove(brick.shape)

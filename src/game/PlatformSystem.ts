@@ -2,10 +2,8 @@ import Phaser from 'phaser'
 import { DANGER_LINE_Y, updateSensorMembership } from './rules'
 import type { BallEntity, OwnedPlatform } from './types'
 
-const PLATFORM_WIDTH = 100
+const WIDTH = 480
 const PLATFORM_HEIGHT = 8
-const MIN_X = 60
-const MAX_X = 420
 const MIN_Y = 100
 const MAX_Y = DANGER_LINE_Y - 12
 
@@ -18,6 +16,8 @@ export interface PlatformTriggerHandlers {
   onAttack(ball: BallEntity): void
   onSplit(ball: BallEntity, platformId: string): void
   onFire(ball: BallEntity): void
+  onWater(ball: BallEntity): void
+  onWind(ball: BallEntity): void
 }
 
 export class PlatformSystem {
@@ -30,6 +30,7 @@ export class PlatformSystem {
   constructor(
     private readonly scene: Phaser.Scene,
     private readonly platforms: OwnedPlatform[],
+    private readonly getPlatformWidth: () => number,
   ) {
     scene.input.on('dragstart', (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject) => {
       if (!this.placementMode) return
@@ -46,7 +47,8 @@ export class PlatformSystem {
       if (!platform) return
       const view = this.views.get(platform.id)
       if (!view) return
-      platform.x = Phaser.Math.Clamp(dragX, MIN_X, MAX_X)
+      const halfWidth = this.platformWidth / 2
+      platform.x = Phaser.Math.Clamp(dragX, halfWidth + 10, WIDTH - halfWidth - 10)
       platform.y = Phaser.Math.Clamp(dragY, MIN_Y, MAX_Y)
       view.shape.setPosition(platform.x, platform.y)
       view.label.setPosition(platform.x, platform.y)
@@ -76,11 +78,11 @@ export class PlatformSystem {
     }
 
     for (const platform of this.platforms) {
+      const width = this.platformWidth
       let view = this.views.get(platform.id)
       if (!view) {
-        const shape = this.scene.add.rectangle(0, 0, PLATFORM_WIDTH, PLATFORM_HEIGHT, this.color(platform), 0.9).setStrokeStyle(2, 0xffffff, 0.55).setDepth(3)
-        const platformLabel = platform.type === 'attack' ? '+1' : platform.type === 'split' ? '×2' : '火'
-        const label = this.scene.add.text(0, 0, platformLabel, {
+        const shape = this.scene.add.rectangle(0, 0, width, PLATFORM_HEIGHT, this.color(platform), 0.9).setStrokeStyle(2, 0xffffff, 0.55).setDepth(3)
+        const label = this.scene.add.text(0, 0, this.label(platform), {
           fontFamily: 'system-ui, sans-serif', fontSize: '11px', fontStyle: 'bold', color: '#ffffff',
         }).setOrigin(0.5).setDepth(4)
         shape.setData('platformId', platform.id)
@@ -92,6 +94,9 @@ export class PlatformSystem {
         view = { shape, label }
         this.views.set(platform.id, view)
       }
+      view.shape.setSize(width, PLATFORM_HEIGHT)
+      view.shape.displayWidth = width
+      view.label.setText(this.label(platform))
       const visible = platform.isPlaced && platform.x !== undefined && platform.y !== undefined
       view.shape.setVisible(visible)
       view.label.setVisible(visible)
@@ -176,25 +181,30 @@ export class PlatformSystem {
     for (const ball of [...balls]) {
       const crossedIds: string[] = []
       for (const platform of placed) {
-        const rect = new Phaser.Geom.Rectangle(platform.x! - PLATFORM_WIDTH / 2, platform.y! - 10, PLATFORM_WIDTH, 20)
+        const rect = new Phaser.Geom.Rectangle(platform.x! - this.platformWidth / 2, platform.y! - 10, this.platformWidth, 20)
         const line = new Phaser.Geom.Line(ball.runtime.previousPosition.x, ball.runtime.previousPosition.y, ball.sprite.x, ball.sprite.y)
         const crossed = Phaser.Geom.Intersects.LineToRectangle(line, rect) || rect.contains(ball.sprite.x, ball.sprite.y)
         if (crossed) crossedIds.push(platform.id)
       }
       const enteredIds = updateSensorMembership(ball.runtime.insidePlatformIds, crossedIds)
-      for (const platformId of enteredIds) {
-        const platform = placedById.get(platformId)
-        if (!platform) continue
+      const enteredPlatforms = enteredIds
+        .map((platformId) => placedById.get(platformId))
+        .filter((platform): platform is OwnedPlatform => Boolean(platform))
+        .sort((left, right) => Number(left.type === 'split') - Number(right.type === 'split'))
+      for (const platform of enteredPlatforms) {
         if (platform.type === 'attack') handlers.onAttack(ball)
         else if (platform.type === 'split') handlers.onSplit(ball, platform.id)
-        else handlers.onFire(ball)
+        else if (platform.type === 'fire') handlers.onFire(ball)
+        else if (platform.type === 'water') handlers.onWater(ball)
+        else handlers.onWind(ball)
       }
     }
   }
 
   private isValid(platform: OwnedPlatform): boolean {
     if (!platform.isPlaced || platform.x === undefined || platform.y === undefined) return true
-    return platform.x >= MIN_X && platform.x <= MAX_X && platform.y >= MIN_Y && platform.y <= MAX_Y
+    const halfWidth = this.platformWidth / 2
+    return platform.x >= halfWidth + 10 && platform.x <= WIDTH - halfWidth - 10 && platform.y >= MIN_Y && platform.y <= MAX_Y
   }
 
   private findOpenPosition(platform: OwnedPlatform): { x: number; y: number } | undefined {
@@ -212,6 +222,18 @@ export class PlatformSystem {
   private color(platform: OwnedPlatform): number {
     if (platform.type === 'attack') return 0xffb23d
     if (platform.type === 'split') return 0xff4fb7
-    return 0xff5a36
+    if (platform.type === 'fire') return 0xff5a36
+    if (platform.type === 'water') return 0x318cff
+    return 0x55d68b
   }
+
+  private label(platform: OwnedPlatform): string {
+    if (platform.type === 'attack') return '+1'
+    if (platform.type === 'split') return '×2'
+    if (platform.type === 'fire') return '火'
+    if (platform.type === 'water') return '水'
+    return '風'
+  }
+
+  private get platformWidth(): number { return Phaser.Math.Clamp(this.getPlatformWidth(), 40, 420) }
 }

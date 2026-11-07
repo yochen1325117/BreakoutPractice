@@ -5,6 +5,7 @@ import {
   brickRowsForWave,
   difficultyForWave,
   hpCapForWave,
+  inheritSplitState,
   maxHpForWave,
   launchAngleForAim,
   missingBallCount,
@@ -92,6 +93,24 @@ describe('breakout rules', () => {
     expect(missingBallCount(1, 1)).toBe(0)
     expect(missingBallCount(2, 4)).toBe(2)
     expect(missingBallCount(8, 4)).toBe(0)
+  })
+
+  it('copies permanent and temporary stats to a split ball without sharing modifier arrays', () => {
+    const source = {
+      build: { baseAttack: 7, formId: 'normal' as const, elementId: 'fire' as const, modifierIds: ['charged'] },
+      runtime: { nextHitBonus: 4, nextHitElementId: 'wind' as const, speedOverride: 520 },
+    }
+    const target = {
+      build: { baseAttack: 1, formId: 'normal' as const, elementId: 'neutral' as const, modifierIds: [] as string[] },
+      runtime: { nextHitBonus: 0, nextHitElementId: 'neutral' as 'neutral' | 'fire' | 'water' | 'wind', speedOverride: undefined as number | undefined },
+    }
+    inheritSplitState(source, target)
+    expect(target).toEqual({
+      build: { baseAttack: 7, formId: 'normal', elementId: 'fire', modifierIds: ['charged'] },
+      runtime: { nextHitBonus: 4, nextHitElementId: 'wind', speedOverride: 520 },
+    })
+    source.build.modifierIds.push('source-only')
+    expect(target.build.modifierIds).toEqual(['charged'])
   })
 
   it('detects placement overlap with an optional gap', () => {

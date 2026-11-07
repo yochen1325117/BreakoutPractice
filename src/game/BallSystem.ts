@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { ballColorForAttack, launchAngleForAim, sweptPaddleCrossingX } from './rules'
+import { ballColorForAttack, inheritSplitState, launchAngleForAim, sweptPaddleCrossingX } from './rules'
 import type { BallEntity, PlayerBallBuild } from './types'
 
 const BALL_RADIUS = 8
@@ -117,6 +117,7 @@ export class BallSystem {
       clone.runtime.insidePlatformIds.add(platformId)
     }
     clone.runtime.insidePlatformIds.add(sourcePlatformId)
+    inheritSplitState(source, clone)
     clone.runtime.previousPosition.copy(source.runtime.previousPosition)
     const rotated = new Phaser.Math.Vector2(
       velocity.x * Math.cos(angle) - velocity.y * Math.sin(angle),
@@ -133,11 +134,13 @@ export class BallSystem {
       if (body.velocity.lengthSq() > 0) {
         if (Math.abs(body.velocity.x) < 70) body.velocity.x = (body.velocity.x < 0 ? -1 : 1) * 70
         if (Math.abs(body.velocity.y) < 70) body.velocity.y = (body.velocity.y < 0 ? -1 : 1) * 70
-        body.velocity.normalize().scale(speed)
+        body.velocity.normalize().scale(ball.runtime.speedOverride ?? speed)
       }
       const attack = ball.build.baseAttack + ball.runtime.nextHitBonus
       ball.sprite.setFillStyle(ballColorForAttack(attack))
       if (ball.runtime.nextHitElementId === 'fire') ball.sprite.setStrokeStyle(4, 0xff6a32, 1)
+      else if (ball.runtime.nextHitElementId === 'water') ball.sprite.setStrokeStyle(4, 0x43b7ff, 1)
+      else if (ball.runtime.nextHitElementId === 'wind') ball.sprite.setStrokeStyle(4, 0x64f0a5, 1)
       else ball.sprite.setStrokeStyle(2, 0xffffff, 0.9)
       ball.label.setText('')
       ball.label.setPosition(ball.sprite.x, ball.sprite.y)
