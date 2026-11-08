@@ -49,7 +49,7 @@ export class LoadoutPanel {
       `已擁有　　${session.ownedPlatforms.length}\n` +
       `已放置　　${placedCount}\n` +
       `強化平台　${attackCount}\n` +
-      `分裂平台　${splitCount}\n` +
+      `分裂平台　${splitCount}（×${session.splitPlatformBallCount}）\n` +
       `火焰平台　${fireCount}\n` +
       `水流平台　${waterCount}\n` +
       `疾風平台　${windCount}\n` +

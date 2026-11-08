@@ -16,22 +16,13 @@ import {
   minHpForWave,
   pickRandomDistinct,
   randomBrickHp,
-  readHighScore,
   rayRectangleDistance,
   rectanglesOverlap,
-  saveHighScore,
-  scoreForBrickDestroyed,
-  scoreForWaveClear,
+  splitAngleOffsets,
   sweptPaddleCrossingX,
   updateSensorMembership,
 } from './rules'
-import type { ActiveBallElementId, StorageLike } from './types'
-
-class MemoryStorage implements StorageLike {
-  private values = new Map<string, string>()
-  getItem(key: string): string | null { return this.values.get(key) ?? null }
-  setItem(key: string, value: string): void { this.values.set(key, value) }
-}
+import type { ActiveBallElementId } from './types'
 
 describe('breakout rules', () => {
   it('adds one brick row per wave and caps the layout at six rows', () => {
@@ -69,10 +60,10 @@ describe('breakout rules', () => {
   })
 
   it('increases ball speed once per playing second and caps it', () => {
-    expect(ballSpeedForElapsedSeconds(0)).toBe(600)
-    expect(ballSpeedForElapsedSeconds(1)).toBe(602)
-    expect(ballSpeedForElapsedSeconds(150)).toBe(900)
-    expect(ballSpeedForElapsedSeconds(999)).toBe(900)
+    expect(ballSpeedForElapsedSeconds(0)).toBe(500)
+    expect(ballSpeedForElapsedSeconds(1)).toBe(502)
+    expect(ballSpeedForElapsedSeconds(150)).toBe(800)
+    expect(ballSpeedForElapsedSeconds(999)).toBe(800)
   })
 
   it('colors balls from their unique active elements and averages multiple colors', () => {
@@ -92,11 +83,6 @@ describe('breakout rules', () => {
     expect(attackRangeForBalls([], 4)).toEqual([4, 4])
   })
 
-  it('scores only destroyed bricks and wave clears', () => {
-    expect(scoreForBrickDestroyed(40, 5)).toBe(90)
-    expect(scoreForWaveClear(50, 3)).toBe(350)
-  })
-
   it('limits player-selected launch direction to a small angle', () => {
     expect(launchAngleForAim(-1)).toBe(-118)
     expect(launchAngleForAim(0)).toBe(-90)
@@ -109,6 +95,11 @@ describe('breakout rules', () => {
     expect(missingBallCount(1, 1)).toBe(0)
     expect(missingBallCount(2, 4)).toBe(2)
     expect(missingBallCount(8, 4)).toBe(0)
+  })
+
+  it('creates one clone for double split and two angled clones for triple split', () => {
+    expect(splitAngleOffsets(2)).toEqual([18])
+    expect(splitAngleOffsets(3)).toEqual([-18, 18])
   })
 
   it('copies permanent and temporary stats to a split ball without sharing arrays or element sets', () => {
@@ -203,11 +194,4 @@ describe('breakout rules', () => {
     expect(updateSensorMembership(inside, ['split-b'])).toEqual(['split-b'])
   })
 
-  it('persists high score and tolerates invalid stored values', () => {
-    const storage = new MemoryStorage()
-    saveHighScore(123.9, storage)
-    expect(readHighScore(storage)).toBe(123)
-    storage.setItem('breakout-practice-high-score', 'not-a-number')
-    expect(readHighScore(storage)).toBe(0)
-  })
 })

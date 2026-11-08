@@ -14,13 +14,9 @@ import {
   attackRangeForBalls,
   electricChainDamage,
   effectiveBallElements,
-  MAX_BALL_SPEED,
+  WIND_BALL_SPEED,
   ballSpeedForElapsedSeconds,
   mergeTargetDamage,
-  readHighScore,
-  saveHighScore,
-  scoreForBrickDestroyed,
-  scoreForWaveClear,
   missingBallCount,
 } from '../game/rules'
 import { GameState, type BallEntity, type BrickView, type GameSession, type RewardOption } from '../game/types'
@@ -47,9 +43,7 @@ export class GameScene extends Phaser.Scene {
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys
   private keyA?: Phaser.Input.Keyboard.Key
   private keyD?: Phaser.Input.Keyboard.Key
-  private scoreText!: Phaser.GameObjects.Text
   private waveText!: Phaser.GameObjects.Text
-  private highScoreText!: Phaser.GameObjects.Text
   private buildText!: Phaser.GameObjects.Text
   private platformText!: Phaser.GameObjects.Text
   private statusText!: Phaser.GameObjects.Text
@@ -83,7 +77,12 @@ export class GameScene extends Phaser.Scene {
     this.createPaddle()
     this.bricks = new BrickSystem(this)
     this.balls = new BallSystem(this, this.session.ballBuild)
-    this.platforms = new PlatformSystem(this, this.session.ownedPlatforms, () => this.session.platformWidth)
+    this.platforms = new PlatformSystem(
+      this,
+      this.session.ownedPlatforms,
+      () => this.session.platformWidth,
+      () => this.session.splitPlatformBallCount,
+    )
     this.rewards = new RewardSystem()
     this.damageResolver = new DamageResolver()
     this.loadout = new LoadoutPanel(this)
@@ -140,8 +139,6 @@ export class GameScene extends Phaser.Scene {
 
   private createSession(): GameSession {
     return {
-      score: 0,
-      highScore: readHighScore(window.localStorage),
       wave: 0,
       elapsedPlaySeconds: 0,
       ballBuild: { baseAttack: 1, formId: 'normal', elementIds: [], modifierIds: [] },
@@ -149,6 +146,7 @@ export class GameScene extends Phaser.Scene {
       paddleWidth: INITIAL_PADDLE_WIDTH,
       startingBallCount: 1,
       platformWidth: 100,
+      splitPlatformBallCount: 2,
     }
   }
 
@@ -170,7 +168,6 @@ export class GameScene extends Phaser.Scene {
     const style: Phaser.Types.GameObjects.Text.TextStyle = {
       fontFamily: 'system-ui, sans-serif', fontSize: '17px', color: '#d8f8ff', fontStyle: 'bold',
     }
-    this.scoreText = this.add.text(14, 12, '', style)
     this.waveText = this.add.text(WIDTH / 2, 12, '', style).setOrigin(0.5, 0)
     this.muteButton = this.add.text(WIDTH - 14, 9, '音效 ON', {
       ...style, fontSize: '13px', backgroundColor: '#17233d', padding: { x: 8, y: 6 },
@@ -178,8 +175,7 @@ export class GameScene extends Phaser.Scene {
       this.audio.setMuted(!this.audio.isMuted)
       this.muteButton.setText(this.audio.isMuted ? '音效 OFF' : '音效 ON')
     })
-    this.highScoreText = this.add.text(14, 48, '', { ...style, fontSize: '11px', color: '#8da6c9' })
-    this.buildText = this.add.text(112, 43, '', {
+    this.buildText = this.add.text(14, 43, '', {
       ...style, fontSize: '12px', backgroundColor: '#17233d', padding: { x: 7, y: 5 },
     }).setInteractive({ useHandCursor: true }).on('pointerdown', () => this.openLoadout())
     this.platformText = this.add.text(WIDTH - 14, 43, '', {
@@ -272,7 +268,7 @@ export class GameScene extends Phaser.Scene {
         this.updateHud()
       },
       onSplit: (ball, platformId) => {
-        this.balls.split(ball, platformId)
+        this.balls.split(ball, platformId, this.session.splitPlatformBallCount)
         this.audio.play('break')
         this.updateHud()
       },
@@ -288,9 +284,9 @@ export class GameScene extends Phaser.Scene {
       },
       onWind: (ball) => {
         ball.runtime.nextHitElementIds.add('wind')
-        ball.runtime.speedOverride = MAX_BALL_SPEED
+        ball.runtime.speedOverride = WIND_BALL_SPEED
         const body = ball.sprite.body as Phaser.Physics.Arcade.Body
-        if (body.velocity.lengthSq() > 0) body.velocity.normalize().scale(MAX_BALL_SPEED)
+        if (body.velocity.lengthSq() > 0) body.velocity.normalize().scale(WIND_BALL_SPEED)
         this.audio.play('hit')
         this.updateHud()
       },
@@ -344,7 +340,6 @@ export class GameScene extends Phaser.Scene {
       if (!this.bricks.get(target.shape)) continue
       this.applyBrickDamage(target, this.damageResolver.applyDamage(target, damage))
     }
-    this.updateHighScore()
     if (this.bricks.count === 0) this.clearWave()
     this.updateHud()
   }
@@ -353,7 +348,6 @@ export class GameScene extends Phaser.Scene {
     if (result.destroyed) {
       this.audio.play('break')
       this.createBreakParticles(brick.shape.x, brick.shape.y, brick.shape.fillColor)
-      this.session.score = scoreForBrickDestroyed(this.session.score, brick.data.maxHp)
       this.bricks.destroy(brick)
     } else {
       this.audio.play('hit')
@@ -407,8 +401,6 @@ export class GameScene extends Phaser.Scene {
     if (this.state !== GameState.PLAYING) return
     this.state = GameState.WAVE_CLEAR
     this.balls.removeAll()
-    this.session.score = scoreForWaveClear(this.session.score, this.session.wave)
-    this.updateHighScore()
     this.updateHud()
     this.audio.play('clear')
     this.statusText.setText(`第 ${this.session.wave} 波完成！`).setVisible(true)
@@ -445,7 +437,7 @@ export class GameScene extends Phaser.Scene {
         return { title: '強化平台', description: '每次穿越使下一擊攻擊力 +1，可累積' }
       }
       if (reward.platformType === 'split') {
-        return { title: '分裂平台', description: '每次穿越分裂出一顆繼承永久能力的新球' }
+        return { title: '分裂平台 ×2', description: '每次穿越後由一顆球分裂成兩顆球' }
       }
       if (reward.platformType === 'fire') {
         return { title: '火焰平台', description: '下次命中以完整攻擊力穿透後方一塊磚' }
@@ -454,7 +446,7 @@ export class GameScene extends Phaser.Scene {
         return { title: '水流平台', description: '下次命中以完整攻擊力擴散至左右磚塊' }
       }
       if (reward.platformType === 'wind') {
-        return { title: '疾風平台', description: '球速提升至最高，直到下一次命中' }
+        return { title: '疾風平台', description: '球速提升至 1000，直到下一次命中' }
       }
       return { title: '電流平台', description: '下次命中以一半攻擊力隨機連鎖兩塊磚' }
     }
@@ -463,6 +455,9 @@ export class GameScene extends Phaser.Scene {
     }
     if (reward.type === 'platform-width') {
       return { title: '平台加長', description: `所有獎勵平台長度 +20（目前 ${this.session.platformWidth}）` }
+    }
+    if (reward.type === 'split-upgrade') {
+      return { title: '分裂平台升級 ×3', description: '分裂平台改為每次讓一顆球分裂成三顆球' }
     }
     return { title: '起始球數 +1', description: `下一波起始球數提升至 ${this.session.startingBallCount + 1}` }
   }
@@ -509,10 +504,10 @@ export class GameScene extends Phaser.Scene {
       `可放置在警戒線以上，平台允許互相重疊\n` +
       `未放置的平台會保留在庫存\n\n` +
       `橘色 +1：下一次攻擊力增加\n` +
-      `粉色 ×2：球穿越時產生新球\n` +
+      `粉色 ×${this.session.splitPlatformBallCount}：球穿越時分裂\n` +
       `紅色 火：下次攻擊穿透一塊磚\n` +
       `藍色 水：下次攻擊擴散至左右\n` +
-      `綠色 風：下次命中前維持最高球速\n` +
+      `綠色 風：下次命中前維持 1000 球速\n` +
       `黃色 電：下次攻擊隨機連鎖兩塊磚`, {
         fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#8da6c9',
         align: 'center', lineSpacing: 4,
@@ -564,7 +559,7 @@ export class GameScene extends Phaser.Scene {
     const index = this.session.ownedPlatforms.findIndex((item) => item.id === selected.id) + 1
     const type = selected.type === 'attack'
       ? '強化平台 +1'
-      : selected.type === 'split' ? '分裂平台 ×2'
+      : selected.type === 'split' ? `分裂平台 ×${this.session.splitPlatformBallCount}`
         : selected.type === 'fire' ? '火焰平台'
           : selected.type === 'water' ? '水流平台' : '疾風平台'
     const displayType = selected.type === 'electric' ? '電流平台' : type
@@ -622,10 +617,9 @@ export class GameScene extends Phaser.Scene {
     this.waveCountdownTimer?.remove(false)
     this.waveCountdownTimer = undefined
     this.balls.removeAll()
-    this.updateHighScore()
     this.uiBlocking = true
     this.overlay.setVisible(true)
-    this.statusText.setText(`磚塊越過警戒線！\n分數 ${this.session.score}\n抵達第 ${this.session.wave} 波`).setVisible(true)
+    this.statusText.setText(`磚塊越過警戒線！\n抵達第 ${this.session.wave} 波`).setVisible(true)
     this.restartButton.setVisible(true)
   }
 
@@ -639,12 +633,6 @@ export class GameScene extends Phaser.Scene {
     this.scene.restart()
   }
 
-  private updateHighScore(): void {
-    if (this.session.score <= this.session.highScore) return
-    this.session.highScore = this.session.score
-    saveHighScore(this.session.highScore, window.localStorage)
-  }
-
   private updateHud(): void {
     const formName = BALL_FORM_DEFINITIONS[this.session.ballBuild.formId].name
     const balls = this.balls?.balls ?? []
@@ -654,9 +642,7 @@ export class GameScene extends Phaser.Scene {
     const activeElements = new Set(activeElementsForBalls(balls, this.session.ballBuild.elementIds))
     const shortNames = { fire: '火', water: '水', wind: '風', electric: '電' } as const
     const elementSummary = elementOrder.filter((element) => activeElements.has(element)).map((element) => shortNames[element]).join('') || '無屬性'
-    this.scoreText.setText(`分數 ${this.session.score}`)
     this.waveText.setText(`第 ${this.session.wave} 波`)
-    this.highScoreText.setText(`最高 ${this.session.highScore}`)
     this.buildText.setText(`球 ${balls.length}｜攻 ${attackSummary}｜${formName}・${elementSummary}`)
     this.platformText.setText(`平台 ${this.platforms?.placedCount ?? 0}/${this.session.ownedPlatforms.length}`)
   }

@@ -5,8 +5,6 @@ import type { BallEntity, BrickView, GameSession } from './types'
 
 function session(): GameSession {
   return {
-    score: 0,
-    highScore: 0,
     wave: 1,
     elapsedPlaySeconds: 0,
     ballBuild: { baseAttack: 2, formId: 'normal', elementIds: [], modifierIds: [] },
@@ -14,6 +12,7 @@ function session(): GameSession {
     paddleWidth: 108,
     startingBallCount: 1,
     platformWidth: 100,
+    splitPlatformBallCount: 2,
   }
 }
 
@@ -108,18 +107,25 @@ describe('reward system', () => {
     expect(current.ownedPlatforms[0]).toMatchObject({ type: 'attack', isPlaced: false })
   })
 
-  it('removes split rewards after two are owned and rejects a third', () => {
+  it('limits split platforms to one and offers a one-time triple-split upgrade', () => {
     const current = session()
-    current.ownedPlatforms.push(
-      { id: 'split-1', type: 'split', isPlaced: false },
-      { id: 'split-2', type: 'split', isPlaced: true, x: 100, y: 200 },
-    )
+    current.ownedPlatforms.push({ id: 'split-1', type: 'split', isPlaced: false })
+    let sawUpgrade = false
     for (let index = 0; index < 20; index += 1) {
       const options = new RewardSystem(() => index / 20).createOptions(current)
       expect(options.some((option) => option.type === 'platform' && option.platformType === 'split')).toBe(false)
+      sawUpgrade ||= options.some((option) => option.type === 'split-upgrade')
     }
+    expect(sawUpgrade).toBe(true)
     expect(new RewardSystem().apply(current, { type: 'platform', platformType: 'split' })).toBeUndefined()
-    expect(current.ownedPlatforms).toHaveLength(2)
+    expect(current.ownedPlatforms).toHaveLength(1)
+
+    new RewardSystem().apply(current, { type: 'split-upgrade' })
+    expect(current.splitPlatformBallCount).toBe(3)
+    for (let index = 0; index < 20; index += 1) {
+      const options = new RewardSystem(() => index / 20).createOptions(current)
+      expect(options.some((option) => option.type === 'split-upgrade')).toBe(false)
+    }
   })
 
   it('permanently increases paddle width and starting ball count for the run', () => {

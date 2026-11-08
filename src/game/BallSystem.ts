@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { ballColorForElements, effectiveBallElements, inheritSplitState, launchAngleForAim, sweptPaddleCrossingX } from './rules'
+import { ballColorForElements, effectiveBallElements, inheritSplitState, launchAngleForAim, splitAngleOffsets, sweptPaddleCrossingX } from './rules'
 import type { BallEntity, PlayerBallBuild } from './types'
 
 const BALL_RADIUS = 8
@@ -109,23 +109,24 @@ export class BallSystem {
     }
   }
 
-  split(source: BallEntity, sourcePlatformId: string): BallEntity {
+  split(source: BallEntity, sourcePlatformId: string, totalBallCount: 2 | 3): BallEntity[] {
     const velocity = (source.sprite.body as Phaser.Physics.Arcade.Body).velocity.clone()
-    const angle = Phaser.Math.DegToRad(18)
-    const clone = this.createBall(source.sprite.x, source.sprite.y)
-    for (const platformId of source.runtime.insidePlatformIds) {
-      clone.runtime.insidePlatformIds.add(platformId)
-    }
-    clone.runtime.insidePlatformIds.add(sourcePlatformId)
-    inheritSplitState(source, clone)
-    clone.runtime.previousPosition.copy(source.runtime.previousPosition)
-    const rotated = new Phaser.Math.Vector2(
-      velocity.x * Math.cos(angle) - velocity.y * Math.sin(angle),
-      velocity.x * Math.sin(angle) + velocity.y * Math.cos(angle),
-    )
-    ;(clone.sprite.body as Phaser.Physics.Arcade.Body).setVelocity(rotated.x, rotated.y)
-    clone.runtime.previousVelocity.copy(rotated)
-    return clone
+    const angleOffsets = splitAngleOffsets(totalBallCount)
+    return angleOffsets.map((degrees) => {
+      const angle = Phaser.Math.DegToRad(degrees)
+      const clone = this.createBall(source.sprite.x, source.sprite.y)
+      for (const platformId of source.runtime.insidePlatformIds) clone.runtime.insidePlatformIds.add(platformId)
+      clone.runtime.insidePlatformIds.add(sourcePlatformId)
+      inheritSplitState(source, clone)
+      clone.runtime.previousPosition.copy(source.runtime.previousPosition)
+      const rotated = new Phaser.Math.Vector2(
+        velocity.x * Math.cos(angle) - velocity.y * Math.sin(angle),
+        velocity.x * Math.sin(angle) + velocity.y * Math.cos(angle),
+      )
+      ;(clone.sprite.body as Phaser.Physics.Arcade.Body).setVelocity(rotated.x, rotated.y)
+      clone.runtime.previousVelocity.copy(rotated)
+      return clone
+    })
   }
 
   update(speed: number): void {

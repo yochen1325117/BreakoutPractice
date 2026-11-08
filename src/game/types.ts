@@ -69,8 +69,6 @@ export interface OwnedPlatform {
 }
 
 export interface GameSession {
-  score: number
-  highScore: number
   wave: number
   elapsedPlaySeconds: number
   ballBuild: PlayerBallBuild
@@ -78,6 +76,7 @@ export interface GameSession {
   paddleWidth: number
   startingBallCount: number
   platformWidth: number
+  splitPlatformBallCount: 2 | 3
 }
 
 export interface BrickData {
@@ -100,8 +99,4 @@ export type RewardOption =
   | { type: 'paddle-width'; amount: number }
   | { type: 'platform-width'; amount: number }
   | { type: 'starting-ball'; amount: 1 }
-
-export interface StorageLike {
-  getItem(key: string): string | null
-  setItem(key: string, value: string): void
-}
+  | { type: 'split-upgrade' }

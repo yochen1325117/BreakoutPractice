@@ -32,6 +32,7 @@ export class PlatformSystem {
     private readonly scene: Phaser.Scene,
     private readonly platforms: OwnedPlatform[],
     private readonly getPlatformWidth: () => number,
+    private readonly getSplitBallCount: () => 2 | 3,
   ) {
     scene.input.on('dragstart', (_pointer: Phaser.Input.Pointer, object: Phaser.GameObjects.GameObject) => {
       if (!this.placementMode) return
@@ -232,7 +233,7 @@ export class PlatformSystem {
 
   private label(platform: OwnedPlatform): string {
     if (platform.type === 'attack') return '+1'
-    if (platform.type === 'split') return '×2'
+    if (platform.type === 'split') return `×${this.getSplitBallCount()}`
     if (platform.type === 'fire') return '火'
     if (platform.type === 'water') return '水'
     if (platform.type === 'wind') return '風'

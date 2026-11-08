@@ -15,7 +15,8 @@ export class RewardSystem {
       { type: 'starting-ball', amount: 1 },
     ]
     const splitCount = session.ownedPlatforms.filter((platform) => platform.type === 'split').length
-    if (splitCount < 2) pool.push({ type: 'platform', platformType: 'split' })
+    if (splitCount < 1) pool.push({ type: 'platform', platformType: 'split' })
+    if (splitCount >= 1 && session.splitPlatformBallCount === 2) pool.push({ type: 'split-upgrade' })
     if (session.paddleWidth + 20 <= MAX_PADDLE_WIDTH) {
       pool.push({ type: 'paddle-width', amount: 20 })
     }
@@ -47,7 +48,13 @@ export class RewardSystem {
       session.startingBallCount += reward.amount
       return undefined
     }
-    if (reward.platformType === 'split' && session.ownedPlatforms.filter((item) => item.type === 'split').length >= 2) {
+    if (reward.type === 'split-upgrade') {
+      if (session.splitPlatformBallCount === 2 && session.ownedPlatforms.some((item) => item.type === 'split')) {
+        session.splitPlatformBallCount = 3
+      }
+      return undefined
+    }
+    if (reward.platformType === 'split' && session.ownedPlatforms.some((item) => item.type === 'split')) {
       return undefined
     }
     const platform: OwnedPlatform = {

@@ -1,9 +1,10 @@
-import type { ActiveBallElementId, BallEntity, PlayerBallBuild, StorageLike } from './types'
+import type { ActiveBallElementId, BallEntity, PlayerBallBuild } from './types'
 
 export const MAX_BRICK_ROWS = 6
-export const INITIAL_BALL_SPEED = 600
+export const INITIAL_BALL_SPEED = 500
 export const BALL_SPEED_PER_SECOND = 2
-export const MAX_BALL_SPEED = 900
+export const MAX_BALL_SPEED = 800
+export const WIND_BALL_SPEED = 1000
 export const BRICK_DESCENT_SPEED = 2
 export const DANGER_LINE_Y = 650
 export const MAX_PADDLE_WIDTH = 480 * 0.7
@@ -92,20 +93,16 @@ export function ballSpeedForElapsedSeconds(elapsedSeconds: number): number {
   )
 }
 
-export function scoreForBrickDestroyed(score: number, maxHp: number): number {
-  return score + Math.max(0, Math.floor(maxHp)) * 10
-}
-
-export function scoreForWaveClear(score: number, wave: number): number {
-  return score + 100 * wave
-}
-
 export function launchAngleForAim(aimOffset: number): number {
   return -90 + Math.min(1, Math.max(-1, aimOffset)) * 28
 }
 
 export function missingBallCount(currentCount: number, startingBallCount: number): number {
   return Math.max(0, Math.floor(startingBallCount) - Math.max(0, Math.floor(currentCount)))
+}
+
+export function splitAngleOffsets(totalBallCount: 2 | 3): number[] {
+  return totalBallCount === 3 ? [-18, 18] : [18]
 }
 
 export function electricChainDamage(attack: number): number {
@@ -225,23 +222,4 @@ export function updateSensorMembership(insideIds: Set<string>, crossedIds: reado
     if (!crossed.has(id)) insideIds.delete(id)
   }
   return entered
-}
-
-const HIGH_SCORE_KEY = 'breakout-practice-high-score'
-
-export function readHighScore(storage?: StorageLike): number {
-  try {
-    const value = Number(storage?.getItem(HIGH_SCORE_KEY) ?? 0)
-    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
-  } catch {
-    return 0
-  }
-}
-
-export function saveHighScore(score: number, storage?: StorageLike): void {
-  try {
-    storage?.setItem(HIGH_SCORE_KEY, String(Math.max(0, Math.floor(score))))
-  } catch {
-    // Storage can be unavailable in private or embedded browser contexts.
-  }
 }
