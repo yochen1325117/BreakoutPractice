@@ -18,6 +18,7 @@ export interface PlatformTriggerHandlers {
   onFire(ball: BallEntity): void
   onWater(ball: BallEntity): void
   onWind(ball: BallEntity): void
+  onElectric(ball: BallEntity): void
 }
 
 export class PlatformSystem {
@@ -196,7 +197,8 @@ export class PlatformSystem {
         else if (platform.type === 'split') handlers.onSplit(ball, platform.id)
         else if (platform.type === 'fire') handlers.onFire(ball)
         else if (platform.type === 'water') handlers.onWater(ball)
-        else handlers.onWind(ball)
+        else if (platform.type === 'wind') handlers.onWind(ball)
+        else handlers.onElectric(ball)
       }
     }
   }
@@ -224,7 +226,8 @@ export class PlatformSystem {
     if (platform.type === 'split') return 0xff4fb7
     if (platform.type === 'fire') return 0xff5a36
     if (platform.type === 'water') return 0x318cff
-    return 0x55d68b
+    if (platform.type === 'wind') return 0x55d68b
+    return 0xffd93d
   }
 
   private label(platform: OwnedPlatform): string {
@@ -232,7 +235,8 @@ export class PlatformSystem {
     if (platform.type === 'split') return '×2'
     if (platform.type === 'fire') return '火'
     if (platform.type === 'water') return '水'
-    return '風'
+    if (platform.type === 'wind') return '風'
+    return '電'
   }
 
   private get platformWidth(): number { return Phaser.Math.Clamp(this.getPlatformWidth(), 40, 420) }

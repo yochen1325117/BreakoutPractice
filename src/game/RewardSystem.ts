@@ -11,6 +11,7 @@ export class RewardSystem {
       { type: 'platform', platformType: 'fire' },
       { type: 'platform', platformType: 'water' },
       { type: 'platform', platformType: 'wind' },
+      { type: 'platform', platformType: 'electric' },
       { type: 'starting-ball', amount: 1 },
     ]
     const splitCount = session.ownedPlatforms.filter((platform) => platform.type === 'split').length

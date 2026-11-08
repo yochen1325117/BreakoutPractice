@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import {
+  activeElementsForBalls,
+  attackRangeForBalls,
   ballSpeedForElapsedSeconds,
-  ballColorForAttack,
+  ballColorForElements,
   brickRowsForWave,
   difficultyForWave,
+  electricChainDamage,
   hpCapForWave,
   inheritSplitState,
   maxHpForWave,
+  mergeTargetDamage,
   launchAngleForAim,
   missingBallCount,
   minHpForWave,
+  pickRandomDistinct,
   randomBrickHp,
   readHighScore,
   rayRectangleDistance,
@@ -20,7 +25,7 @@ import {
   sweptPaddleCrossingX,
   updateSensorMembership,
 } from './rules'
-import type { StorageLike } from './types'
+import type { ActiveBallElementId, StorageLike } from './types'
 
 class MemoryStorage implements StorageLike {
   private values = new Map<string, string>()
@@ -64,16 +69,27 @@ describe('breakout rules', () => {
   })
 
   it('increases ball speed once per playing second and caps it', () => {
-    expect(ballSpeedForElapsedSeconds(0)).toBe(400)
-    expect(ballSpeedForElapsedSeconds(1)).toBe(402)
-    expect(ballSpeedForElapsedSeconds(60)).toBe(520)
-    expect(ballSpeedForElapsedSeconds(999)).toBe(520)
+    expect(ballSpeedForElapsedSeconds(0)).toBe(600)
+    expect(ballSpeedForElapsedSeconds(1)).toBe(602)
+    expect(ballSpeedForElapsedSeconds(150)).toBe(900)
+    expect(ballSpeedForElapsedSeconds(999)).toBe(900)
   })
 
-  it('maps attack power from light cyan to deep red', () => {
-    expect(ballColorForAttack(1)).toBe(0x6df6ff)
-    expect(ballColorForAttack(20)).toBe(0x981633)
-    expect(ballColorForAttack(999)).toBe(0x981633)
+  it('colors balls from their unique active elements and averages multiple colors', () => {
+    expect(ballColorForElements([])).toBe(0xeafcff)
+    expect(ballColorForElements(['fire'])).toBe(0xff6a32)
+    expect(ballColorForElements(['fire', 'water'])).toBe(0xa19199)
+    expect(ballColorForElements(['water', 'fire', 'fire'])).toBe(0xa19199)
+  })
+
+  it('summarizes active ball attack ranges and element unions for the HUD', () => {
+    const balls = [
+      { build: { baseAttack: 2, elementIds: ['fire'] }, runtime: { nextHitBonus: 0, nextHitElementIds: new Set(['water']) } },
+      { build: { baseAttack: 2, elementIds: [] }, runtime: { nextHitBonus: 3, nextHitElementIds: new Set(['electric']) } },
+    ] as unknown as import('./types').BallEntity[]
+    expect(attackRangeForBalls(balls, 1)).toEqual([2, 5])
+    expect(activeElementsForBalls(balls, ['wind'])).toEqual(['fire', 'water', 'wind', 'electric'])
+    expect(attackRangeForBalls([], 4)).toEqual([4, 4])
   })
 
   it('scores only destroyed bricks and wave clears', () => {
@@ -95,22 +111,47 @@ describe('breakout rules', () => {
     expect(missingBallCount(8, 4)).toBe(0)
   })
 
-  it('copies permanent and temporary stats to a split ball without sharing modifier arrays', () => {
+  it('copies permanent and temporary stats to a split ball without sharing arrays or element sets', () => {
     const source = {
-      build: { baseAttack: 7, formId: 'normal' as const, elementId: 'fire' as const, modifierIds: ['charged'] },
-      runtime: { nextHitBonus: 4, nextHitElementId: 'wind' as const, speedOverride: 520 },
+      build: { baseAttack: 7, formId: 'normal' as const, elementIds: ['fire'] as ActiveBallElementId[], modifierIds: ['charged'] },
+      runtime: { nextHitBonus: 4, nextHitElementIds: new Set<ActiveBallElementId>(['water', 'wind']), speedOverride: 520 },
     }
     const target = {
-      build: { baseAttack: 1, formId: 'normal' as const, elementId: 'neutral' as const, modifierIds: [] as string[] },
-      runtime: { nextHitBonus: 0, nextHitElementId: 'neutral' as 'neutral' | 'fire' | 'water' | 'wind', speedOverride: undefined as number | undefined },
+      build: { baseAttack: 1, formId: 'normal' as const, elementIds: [] as ('fire' | 'water' | 'wind' | 'electric')[], modifierIds: [] as string[] },
+      runtime: { nextHitBonus: 0, nextHitElementIds: new Set<'fire' | 'water' | 'wind' | 'electric'>(), speedOverride: undefined as number | undefined },
     }
     inheritSplitState(source, target)
     expect(target).toEqual({
-      build: { baseAttack: 7, formId: 'normal', elementId: 'fire', modifierIds: ['charged'] },
-      runtime: { nextHitBonus: 4, nextHitElementId: 'wind', speedOverride: 520 },
+      build: { baseAttack: 7, formId: 'normal', elementIds: ['fire'], modifierIds: ['charged'] },
+      runtime: { nextHitBonus: 4, nextHitElementIds: new Set(['water', 'wind']), speedOverride: 520 },
     })
     source.build.modifierIds.push('source-only')
+    source.runtime.nextHitElementIds.add('electric')
     expect(target.build.modifierIds).toEqual(['charged'])
+    expect([...target.runtime.nextHitElementIds]).toEqual(['water', 'wind'])
+  })
+
+  it('halves electric chain damage with a minimum of one', () => {
+    expect(electricChainDamage(1)).toBe(1)
+    expect(electricChainDamage(3)).toBe(1)
+    expect(electricChainDamage(4)).toBe(2)
+    expect(electricChainDamage(11)).toBe(5)
+  })
+
+  it('applies only the highest secondary damage when effects share a target', () => {
+    const shared = { id: 'shared' }
+    const electricOnly = { id: 'electric' }
+    expect([...mergeTargetDamage([
+      { target: shared, damage: 2 },
+      { target: shared, damage: 5 },
+      { target: electricOnly, damage: 2 },
+    ])]).toEqual([[shared, 5], [electricOnly, 2]])
+  })
+
+  it('picks distinct random chain targets without replacement', () => {
+    const values = [0.99, 0]
+    expect(pickRandomDistinct(['a', 'b', 'c'], 2, () => values.shift() ?? 0)).toEqual(['c', 'a'])
+    expect(pickRandomDistinct(['a'], 2, () => 0)).toEqual(['a'])
   })
 
   it('detects placement overlap with an optional gap', () => {

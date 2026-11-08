@@ -14,4 +14,5 @@ export const BALL_ELEMENT_DEFINITIONS: Record<BallElementId, BallElementDefiniti
   fire: { id: 'fire', name: '火焰' },
   water: { id: 'water', name: '水流' },
   wind: { id: 'wind', name: '疾風' },
+  electric: { id: 'electric', name: '電流' },
 }

@@ -1,5 +1,6 @@
 import { BALL_ELEMENT_DEFINITIONS, BALL_FORM_DEFINITIONS } from './BallDefinitions'
-import type { BallElementId, BallEntity, BrickView } from './types'
+import { effectiveBallElements } from './rules'
+import type { ActiveBallElementId, BallEntity, BrickView } from './types'
 
 export interface AppliedDamageResult {
   damage: number
@@ -8,23 +9,21 @@ export interface AppliedDamageResult {
 
 export interface DamageResult extends AppliedDamageResult {
   attack: number
-  elementId: BallElementId
+  elementIds: ActiveBallElementId[]
 }
 
 export class DamageResolver {
   resolve(ball: BallEntity, brick: BrickView): DamageResult {
     const attack = ball.build.baseAttack + ball.runtime.nextHitBonus
-    const elementId = ball.runtime.nextHitElementId === 'neutral'
-      ? ball.build.elementId
-      : ball.runtime.nextHitElementId
+    const elementIds = effectiveBallElements(ball)
     const result = this.applyDamage(brick, attack)
     ball.runtime.nextHitBonus = 0
-    ball.runtime.nextHitElementId = 'neutral'
+    ball.runtime.nextHitElementIds.clear()
     ball.runtime.speedOverride = undefined
     const context = { ball, brick, damage: result.damage, destroyed: result.destroyed }
     BALL_FORM_DEFINITIONS[ball.build.formId].onHit?.(context)
-    BALL_ELEMENT_DEFINITIONS[elementId].onHit?.(context)
-    return { ...result, attack, elementId }
+    for (const elementId of elementIds) BALL_ELEMENT_DEFINITIONS[elementId].onHit?.(context)
+    return { ...result, attack, elementIds }
   }
 
   applyDamage(brick: BrickView, attack: number): AppliedDamageResult {

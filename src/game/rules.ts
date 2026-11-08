@@ -1,29 +1,56 @@
-import type { BallElementId, PlayerBallBuild, StorageLike } from './types'
+import type { ActiveBallElementId, BallEntity, PlayerBallBuild, StorageLike } from './types'
 
 export const MAX_BRICK_ROWS = 6
-export const INITIAL_BALL_SPEED = 400
+export const INITIAL_BALL_SPEED = 600
 export const BALL_SPEED_PER_SECOND = 2
-export const MAX_BALL_SPEED = 520
+export const MAX_BALL_SPEED = 900
 export const BRICK_DESCENT_SPEED = 2
 export const DANGER_LINE_Y = 650
 export const MAX_PADDLE_WIDTH = 480 * 0.7
 export const MAX_PLATFORM_WIDTH = 420
 
-const BALL_ATTACK_COLORS = [0x6df6ff, 0x668cff, 0xd85cff, 0xff6655, 0x981633]
+export const BALL_ELEMENT_COLORS: Record<ActiveBallElementId, number> = {
+  fire: 0xff6a32,
+  water: 0x43b7ff,
+  wind: 0x64f0a5,
+  electric: 0xffe45c,
+}
+export const NEUTRAL_BALL_COLOR = 0xeafcff
+const BALL_ELEMENT_ORDER: ActiveBallElementId[] = ['fire', 'water', 'wind', 'electric']
 
-export function ballColorForAttack(attack: number): number {
-  const normalized = Math.min(1, Math.max(0, (attack - 1) / 19))
-  const scaled = normalized * (BALL_ATTACK_COLORS.length - 1)
-  const index = Math.min(BALL_ATTACK_COLORS.length - 2, Math.floor(scaled))
-  const progress = scaled - index
-  const start = BALL_ATTACK_COLORS[index]!
-  const end = BALL_ATTACK_COLORS[index + 1]!
-  const channel = (shift: number) => {
-    const from = (start >> shift) & 0xff
-    const to = (end >> shift) & 0xff
-    return Math.round(from + (to - from) * progress)
-  }
-  return (channel(16) << 16) | (channel(8) << 8) | channel(0)
+export function uniqueElements(elements: Iterable<ActiveBallElementId>): ActiveBallElementId[] {
+  const values = new Set(elements)
+  return BALL_ELEMENT_ORDER.filter((element) => values.has(element))
+}
+
+export function effectiveBallElements(ball: Pick<BallEntity, 'build' | 'runtime'>): ActiveBallElementId[] {
+  return uniqueElements([...ball.build.elementIds, ...ball.runtime.nextHitElementIds])
+}
+
+export function activeElementsForBalls(
+  balls: readonly Pick<BallEntity, 'build' | 'runtime'>[],
+  fallback: Iterable<ActiveBallElementId> = [],
+): ActiveBallElementId[] {
+  return uniqueElements([...fallback, ...balls.flatMap((ball) => effectiveBallElements(ball))])
+}
+
+export function attackRangeForBalls(
+  balls: readonly Pick<BallEntity, 'build' | 'runtime'>[],
+  fallbackAttack: number,
+): [number, number] {
+  const attacks = balls.map((ball) => ball.build.baseAttack + ball.runtime.nextHitBonus)
+  return attacks.length === 0
+    ? [fallbackAttack, fallbackAttack]
+    : [Math.min(...attacks), Math.max(...attacks)]
+}
+
+export function ballColorForElements(elements: Iterable<ActiveBallElementId>): number {
+  const unique = uniqueElements(elements)
+  if (unique.length === 0) return NEUTRAL_BALL_COLOR
+  const channelAverage = (shift: number) => Math.round(
+    unique.reduce((sum, element) => sum + ((BALL_ELEMENT_COLORS[element] >> shift) & 0xff), 0) / unique.length,
+  )
+  return (channelAverage(16) << 16) | (channelAverage(8) << 8) | channelAverage(0)
 }
 
 export function brickRowsForWave(wave: number): number {
@@ -81,10 +108,35 @@ export function missingBallCount(currentCount: number, startingBallCount: number
   return Math.max(0, Math.floor(startingBallCount) - Math.max(0, Math.floor(currentCount)))
 }
 
-export interface TemporaryElementState { nextHitElementId: BallElementId; speedOverride?: number }
+export function electricChainDamage(attack: number): number {
+  return Math.max(1, Math.floor(Math.max(0, attack) / 2))
+}
+
+export interface TargetDamage<T> { target: T; damage: number }
+
+export function mergeTargetDamage<T>(intents: Iterable<TargetDamage<T>>): Map<T, number> {
+  const merged = new Map<T, number>()
+  for (const { target, damage } of intents) {
+    merged.set(target, Math.max(merged.get(target) ?? 0, damage))
+  }
+  return merged
+}
+
+export function pickRandomDistinct<T>(items: readonly T[], count: number, random = Math.random): T[] {
+  const available = [...items]
+  const picked: T[] = []
+  const total = Math.min(available.length, Math.max(0, Math.floor(count)))
+  while (picked.length < total) {
+    const index = Math.min(available.length - 1, Math.floor(random() * available.length))
+    picked.push(available.splice(index, 1)[0]!)
+  }
+  return picked
+}
+
+export interface TemporaryElementState { nextHitElementIds: Set<ActiveBallElementId>; speedOverride?: number }
 
 export function inheritTemporaryElement(source: TemporaryElementState, target: TemporaryElementState): void {
-  target.nextHitElementId = source.nextHitElementId
+  target.nextHitElementIds = new Set(source.nextHitElementIds)
   target.speedOverride = source.speedOverride
 }
 
@@ -96,7 +148,7 @@ export interface SplitInheritableState {
 export function inheritSplitState(source: SplitInheritableState, target: SplitInheritableState): void {
   target.build.baseAttack = source.build.baseAttack
   target.build.formId = source.build.formId
-  target.build.elementId = source.build.elementId
+  target.build.elementIds = [...source.build.elementIds]
   target.build.modifierIds = [...source.build.modifierIds]
   target.runtime.nextHitBonus = source.runtime.nextHitBonus
   inheritTemporaryElement(source.runtime, target.runtime)

@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import { AudioManager } from '../game/AudioManager'
-import { BALL_ELEMENT_DEFINITIONS, BALL_FORM_DEFINITIONS } from '../game/BallDefinitions'
+import { BALL_FORM_DEFINITIONS } from '../game/BallDefinitions'
 import { BallSystem } from '../game/BallSystem'
 import { BrickSystem } from '../game/BrickSystem'
 import { DamageResolver, type AppliedDamageResult } from '../game/DamageResolver'
@@ -10,8 +10,13 @@ import { RewardSystem } from '../game/RewardSystem'
 import {
   BRICK_DESCENT_SPEED,
   DANGER_LINE_Y,
+  activeElementsForBalls,
+  attackRangeForBalls,
+  electricChainDamage,
+  effectiveBallElements,
   MAX_BALL_SPEED,
   ballSpeedForElapsedSeconds,
+  mergeTargetDamage,
   readHighScore,
   saveHighScore,
   scoreForBrickDestroyed,
@@ -139,7 +144,7 @@ export class GameScene extends Phaser.Scene {
       highScore: readHighScore(window.localStorage),
       wave: 0,
       elapsedPlaySeconds: 0,
-      ballBuild: { baseAttack: 1, formId: 'normal', elementId: 'neutral', modifierIds: [] },
+      ballBuild: { baseAttack: 1, formId: 'normal', elementIds: [], modifierIds: [] },
       ownedPlatforms: [],
       paddleWidth: INITIAL_PADDLE_WIDTH,
       startingBallCount: 1,
@@ -264,6 +269,7 @@ export class GameScene extends Phaser.Scene {
       onAttack: (ball) => {
         ball.runtime.nextHitBonus += 1
         this.audio.play('hit')
+        this.updateHud()
       },
       onSplit: (ball, platformId) => {
         this.balls.split(ball, platformId)
@@ -271,19 +277,27 @@ export class GameScene extends Phaser.Scene {
         this.updateHud()
       },
       onFire: (ball) => {
-        ball.runtime.nextHitElementId = 'fire'
+        ball.runtime.nextHitElementIds.add('fire')
         this.audio.play('hit')
+        this.updateHud()
       },
       onWater: (ball) => {
-        ball.runtime.nextHitElementId = 'water'
+        ball.runtime.nextHitElementIds.add('water')
         this.audio.play('hit')
+        this.updateHud()
       },
       onWind: (ball) => {
-        ball.runtime.nextHitElementId = 'wind'
+        ball.runtime.nextHitElementIds.add('wind')
         ball.runtime.speedOverride = MAX_BALL_SPEED
         const body = ball.sprite.body as Phaser.Physics.Arcade.Body
         if (body.velocity.lengthSq() > 0) body.velocity.normalize().scale(MAX_BALL_SPEED)
         this.audio.play('hit')
+        this.updateHud()
+      },
+      onElectric: (ball) => {
+        ball.runtime.nextHitElementIds.add('electric')
+        this.audio.play('hit')
+        this.updateHud()
       },
     })
     this.balls.commitPositions()
@@ -293,32 +307,42 @@ export class GameScene extends Phaser.Scene {
     if (this.state !== GameState.PLAYING) return
     const brick = this.bricks.get(object)
     if (!brick) return
-    const penetrationTarget = ball.runtime.nextHitElementId === 'fire' || ball.build.elementId === 'fire'
+    const activeElements = effectiveBallElements(ball)
+    const penetrationTarget = activeElements.includes('fire')
       ? this.bricks.findNextAlongDirection(brick, ball.runtime.previousVelocity)
       : undefined
-    const waterTargets = ball.runtime.nextHitElementId === 'water' || ball.build.elementId === 'water'
+    const waterTargets = activeElements.includes('water')
       ? this.bricks.findHorizontalNeighbors(brick)
       : []
+    const electricTargets = activeElements.includes('electric')
+      ? this.bricks.findRandomTargets(brick, 2)
+      : []
     const result = this.damageResolver.resolve(ball, brick)
-    if (result.elementId === 'fire' && penetrationTarget) {
-      this.createFireTrail(brick.shape.x, brick.shape.y, penetrationTarget.shape.x, penetrationTarget.shape.y)
+    const secondaryDamage: { target: BrickView; damage: number }[] = []
+    const queueSecondaryDamage = (target: BrickView, damage: number): void => {
+      secondaryDamage.push({ target, damage })
     }
-    if (result.elementId === 'water') {
+    if (result.elementIds.includes('fire') && penetrationTarget) {
+      this.createFireTrail(brick.shape.x, brick.shape.y, penetrationTarget.shape.x, penetrationTarget.shape.y)
+      queueSecondaryDamage(penetrationTarget, result.attack)
+    }
+    if (result.elementIds.includes('water')) {
       for (const target of waterTargets) {
         this.createElementTrail(brick.shape.x, brick.shape.y, target.shape.x, target.shape.y, 0x43b7ff)
+        queueSecondaryDamage(target, result.attack)
+      }
+    }
+    if (result.elementIds.includes('electric')) {
+      const chainDamage = electricChainDamage(result.attack)
+      for (const target of electricTargets) {
+        this.createElementTrail(brick.shape.x, brick.shape.y, target.shape.x, target.shape.y, 0xffd93d, 0xf5fbff)
+        queueSecondaryDamage(target, chainDamage)
       }
     }
     this.applyBrickDamage(brick, result)
-    if (result.elementId === 'fire' && penetrationTarget && this.bricks.get(penetrationTarget.shape)) {
-      const penetrationResult = this.damageResolver.applyDamage(penetrationTarget, result.attack)
-      this.applyBrickDamage(penetrationTarget, penetrationResult)
-    }
-    if (result.elementId === 'water') {
-      for (const target of waterTargets) {
-        if (!this.bricks.get(target.shape)) continue
-        const spreadResult = this.damageResolver.applyDamage(target, result.attack)
-        this.applyBrickDamage(target, spreadResult)
-      }
+    for (const [target, damage] of mergeTargetDamage(secondaryDamage)) {
+      if (!this.bricks.get(target.shape)) continue
+      this.applyBrickDamage(target, this.damageResolver.applyDamage(target, damage))
     }
     this.updateHighScore()
     if (this.bricks.count === 0) this.clearWave()
@@ -429,7 +453,10 @@ export class GameScene extends Phaser.Scene {
       if (reward.platformType === 'water') {
         return { title: '水流平台', description: '下次命中以完整攻擊力擴散至左右磚塊' }
       }
-      return { title: '疾風平台', description: '球速提升至最高，直到下一次命中' }
+      if (reward.platformType === 'wind') {
+        return { title: '疾風平台', description: '球速提升至最高，直到下一次命中' }
+      }
+      return { title: '電流平台', description: '下次命中以一半攻擊力隨機連鎖兩塊磚' }
     }
     if (reward.type === 'paddle-width') {
       return { title: '橫桿加長', description: `橫桿長度 +20（目前 ${this.session.paddleWidth}）` }
@@ -485,30 +512,32 @@ export class GameScene extends Phaser.Scene {
       `粉色 ×2：球穿越時產生新球\n` +
       `紅色 火：下次攻擊穿透一塊磚\n` +
       `藍色 水：下次攻擊擴散至左右\n` +
-      `綠色 風：下次命中前維持最高球速`, {
-        fontFamily: 'system-ui, sans-serif', fontSize: '15px', color: '#8da6c9',
-        align: 'center', lineSpacing: 5,
+      `綠色 風：下次命中前維持最高球速\n` +
+      `黃色 電：下次攻擊隨機連鎖兩塊磚`, {
+        fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#8da6c9',
+        align: 'center', lineSpacing: 4,
       }).setOrigin(0.5).setAlpha(0.72)
-    const controlGuide = this.add.text(WIDTH / 2, 618,
-      '◀／▶ 切換平台　｜　放置／收回　｜　刪除不可復原　｜　開始下一波確認', {
-        fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#d8f8ff', align: 'center',
+    const controlGuide = this.add.text(WIDTH / 2, 574,
+      '◀／▶ 切換平台　｜　放置／收回　｜　刪除不可復原\n開始下一波：確認配置後進入倒數', {
+        fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#d8f8ff',
+        align: 'center', lineSpacing: 5,
       }).setOrigin(0.5)
-    this.placementMessage = this.add.text(WIDTH / 2, 644, '選擇平台後即可開始配置', {
+    this.placementMessage = this.add.text(WIDTH / 2, 622, '選擇平台後即可開始配置', {
       fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#8da6c9', align: 'center',
     }).setOrigin(0.5)
-    const previous = this.uiButton(24, 665, '◀', () => this.platforms.cycleSelection(-1))
-    const toggle = this.uiButton(82, 665, '放置／收回', () => {
+    const previous = this.uiButton(24, 670, '◀', () => this.platforms.cycleSelection(-1))
+    const toggle = this.uiButton(82, 670, '放置／收回', () => {
       const ok = this.platforms.toggleSelectedPlacement()
       this.placementMessage?.setText(ok ? '平台狀態已更新' : '沒有足夠的合法空間，請先移動或收回其他平台')
       this.refreshPlacementSummary()
     })
-    const remove = this.uiButton(226, 665, '刪除', () => {
+    const remove = this.uiButton(226, 670, '刪除', () => {
       this.platforms.deleteSelected()
       this.placementMessage?.setText('平台已永久刪除')
       this.refreshPlacementSummary()
     })
-    const next = this.uiButton(307, 665, '▶', () => this.platforms.cycleSelection(1))
-    const confirm = this.uiButton(365, 665, '開始下一波', () => this.confirmPlacement())
+    const next = this.uiButton(307, 670, '▶', () => this.platforms.cycleSelection(1))
+    const confirm = this.uiButton(365, 670, '開始下一波', () => this.confirmPlacement())
     this.placementContainer = this.add.container(0, 0, [
       backdrop, header, title, this.placementSummary, placementGuide, controlGuide,
       this.placementMessage, ...previous, ...toggle, ...remove, ...next, ...confirm,
@@ -538,8 +567,9 @@ export class GameScene extends Phaser.Scene {
       : selected.type === 'split' ? '分裂平台 ×2'
         : selected.type === 'fire' ? '火焰平台'
           : selected.type === 'water' ? '水流平台' : '疾風平台'
+    const displayType = selected.type === 'electric' ? '電流平台' : type
     const status = selected.isPlaced ? '已放置' : '庫存中'
-    this.placementSummary.setText(`${index}/${this.session.ownedPlatforms.length}　${type}　${status}　｜　已放置 ${this.platforms.placedCount}`)
+    this.placementSummary.setText(`${index}/${this.session.ownedPlatforms.length}　${displayType}　${status}　｜　已放置 ${this.platforms.placedCount}`)
   }
 
   private confirmPlacement(): void {
@@ -569,7 +599,7 @@ export class GameScene extends Phaser.Scene {
     this.uiBlocking = true
     this.physics.pause()
     this.time.paused = true
-    this.loadout.show(this.session, this.balls.count, () => {
+    this.loadout.show(this.session, this.balls.balls, () => {
       this.loadout.hide()
       this.uiBlocking = false
       if (!this.pausedByVisibility) {
@@ -617,11 +647,17 @@ export class GameScene extends Phaser.Scene {
 
   private updateHud(): void {
     const formName = BALL_FORM_DEFINITIONS[this.session.ballBuild.formId].name
-    const elementName = BALL_ELEMENT_DEFINITIONS[this.session.ballBuild.elementId].name
+    const balls = this.balls?.balls ?? []
+    const [minimumAttack, maximumAttack] = attackRangeForBalls(balls, this.session.ballBuild.baseAttack)
+    const attackSummary = minimumAttack === maximumAttack ? `${minimumAttack}` : `${minimumAttack}–${maximumAttack}`
+    const elementOrder = ['fire', 'water', 'wind', 'electric'] as const
+    const activeElements = new Set(activeElementsForBalls(balls, this.session.ballBuild.elementIds))
+    const shortNames = { fire: '火', water: '水', wind: '風', electric: '電' } as const
+    const elementSummary = elementOrder.filter((element) => activeElements.has(element)).map((element) => shortNames[element]).join('') || '無屬性'
     this.scoreText.setText(`分數 ${this.session.score}`)
     this.waveText.setText(`第 ${this.session.wave} 波`)
     this.highScoreText.setText(`最高 ${this.session.highScore}`)
-    this.buildText.setText(`球 ${this.balls?.count ?? 0}｜攻 ${this.session.ballBuild.baseAttack}｜${formName}・${elementName}`)
+    this.buildText.setText(`球 ${balls.length}｜攻 ${attackSummary}｜${formName}・${elementSummary}`)
     this.platformText.setText(`平台 ${this.platforms?.placedCount ?? 0}/${this.session.ownedPlatforms.length}`)
   }
 

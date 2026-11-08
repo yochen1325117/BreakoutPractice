@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { brickRowsForWave, randomBrickHp, rayRectangleDistance } from './rules'
+import { brickRowsForWave, pickRandomDistinct, randomBrickHp, rayRectangleDistance } from './rules'
 import type { BrickView } from './types'
 
 const WIDTH = 480
@@ -91,6 +91,10 @@ export class BrickSystem {
     return [...this.views.values()].filter((candidate) =>
       candidate.data.row === primary.data.row && columns.has(candidate.data.column),
     )
+  }
+
+  findRandomTargets(primary: BrickView, count: number): BrickView[] {
+    return pickRandomDistinct([...this.views.values()].filter((candidate) => candidate !== primary), count)
   }
 
   destroy(brick: BrickView): void {

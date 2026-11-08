@@ -9,13 +9,14 @@ export enum GameState {
 }
 
 export type BallFormId = 'normal'
-export type BallElementId = 'neutral' | 'fire' | 'water' | 'wind'
-export type PlatformType = 'attack' | 'split' | 'fire' | 'water' | 'wind'
+export type BallElementId = 'neutral' | 'fire' | 'water' | 'wind' | 'electric'
+export type ActiveBallElementId = Exclude<BallElementId, 'neutral'>
+export type PlatformType = 'attack' | 'split' | 'fire' | 'water' | 'wind' | 'electric'
 
 export interface PlayerBallBuild {
   baseAttack: number
   formId: BallFormId
-  elementId: BallElementId
+  elementIds: ActiveBallElementId[]
   modifierIds: string[]
 }
 
@@ -44,7 +45,7 @@ export interface BallElementDefinition {
 
 export interface BallRuntimeState {
   nextHitBonus: number
-  nextHitElementId: BallElementId
+  nextHitElementIds: Set<ActiveBallElementId>
   speedOverride?: number
   previousPosition: Phaser.Math.Vector2
   previousVelocity: Phaser.Math.Vector2

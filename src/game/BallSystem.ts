@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { ballColorForAttack, inheritSplitState, launchAngleForAim, sweptPaddleCrossingX } from './rules'
+import { ballColorForElements, effectiveBallElements, inheritSplitState, launchAngleForAim, sweptPaddleCrossingX } from './rules'
 import type { BallEntity, PlayerBallBuild } from './types'
 
 const BALL_RADIUS = 8
@@ -24,7 +24,7 @@ export class BallSystem {
   }
 
   createBall(x: number, y: number): BallEntity {
-    const sprite = this.scene.add.circle(x, y, BALL_RADIUS, ballColorForAttack(this.build.baseAttack)).setStrokeStyle(2, 0xffffff, 0.9).setDepth(5)
+    const sprite = this.scene.add.circle(x, y, BALL_RADIUS, ballColorForElements(this.build.elementIds)).setStrokeStyle(2, 0xffffff, 0.9).setDepth(5)
     this.scene.physics.add.existing(sprite)
     this.group.add(sprite)
     const body = sprite.body as Phaser.Physics.Arcade.Body
@@ -34,7 +34,7 @@ export class BallSystem {
     body.setAllowGravity(false)
     body.onWorldBounds = true
 
-    const build = { ...this.build, modifierIds: [...this.build.modifierIds] }
+    const build = { ...this.build, elementIds: [...this.build.elementIds], modifierIds: [...this.build.modifierIds] }
     const label = this.scene.add.text(x, y, '', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '11px',
@@ -49,7 +49,7 @@ export class BallSystem {
       build,
       runtime: {
         nextHitBonus: 0,
-        nextHitElementId: 'neutral',
+        nextHitElementIds: new Set(),
         previousPosition: new Phaser.Math.Vector2(x, y),
         previousVelocity: new Phaser.Math.Vector2(0, 0),
         insidePlatformIds: new Set(),
@@ -136,12 +136,8 @@ export class BallSystem {
         if (Math.abs(body.velocity.y) < 70) body.velocity.y = (body.velocity.y < 0 ? -1 : 1) * 70
         body.velocity.normalize().scale(ball.runtime.speedOverride ?? speed)
       }
-      const attack = ball.build.baseAttack + ball.runtime.nextHitBonus
-      ball.sprite.setFillStyle(ballColorForAttack(attack))
-      if (ball.runtime.nextHitElementId === 'fire') ball.sprite.setStrokeStyle(4, 0xff6a32, 1)
-      else if (ball.runtime.nextHitElementId === 'water') ball.sprite.setStrokeStyle(4, 0x43b7ff, 1)
-      else if (ball.runtime.nextHitElementId === 'wind') ball.sprite.setStrokeStyle(4, 0x64f0a5, 1)
-      else ball.sprite.setStrokeStyle(2, 0xffffff, 0.9)
+      ball.sprite.setFillStyle(ballColorForElements(effectiveBallElements(ball)))
+      ball.sprite.setStrokeStyle(2, 0xffffff, 0.9)
       ball.label.setText('')
       ball.label.setPosition(ball.sprite.x, ball.sprite.y)
     }

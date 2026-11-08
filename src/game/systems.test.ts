@@ -9,7 +9,7 @@ function session(): GameSession {
     highScore: 0,
     wave: 1,
     elapsedPlaySeconds: 0,
-    ballBuild: { baseAttack: 2, formId: 'normal', elementId: 'neutral', modifierIds: [] },
+    ballBuild: { baseAttack: 2, formId: 'normal', elementIds: [], modifierIds: [] },
     ownedPlatforms: [],
     paddleWidth: 108,
     startingBallCount: 1,
@@ -20,42 +20,43 @@ function session(): GameSession {
 describe('damage resolver', () => {
   it('uses and clears a stacked next-hit bonus', () => {
     const ball = {
-      build: { baseAttack: 2, formId: 'normal', elementId: 'neutral', modifierIds: [] },
-      runtime: { nextHitBonus: 3, nextHitElementId: 'neutral' },
+      build: { baseAttack: 2, formId: 'normal', elementIds: [], modifierIds: [] },
+      runtime: { nextHitBonus: 3, nextHitElementIds: new Set() },
     } as unknown as BallEntity
     const brick = { data: { hp: 8, maxHp: 8 } } as unknown as BrickView
     const result = new DamageResolver().resolve(ball, brick)
-    expect(result).toEqual({ damage: 5, destroyed: false, attack: 5, elementId: 'neutral' })
+    expect(result).toEqual({ damage: 5, destroyed: false, attack: 5, elementIds: [] })
     expect(brick.data.hp).toBe(3)
     expect(ball.runtime.nextHitBonus).toBe(0)
   })
 
   it('caps reported damage at remaining brick hp', () => {
     const ball = {
-      build: { baseAttack: 10, formId: 'normal', elementId: 'neutral', modifierIds: [] },
-      runtime: { nextHitBonus: 0, nextHitElementId: 'neutral' },
+      build: { baseAttack: 10, formId: 'normal', elementIds: [], modifierIds: [] },
+      runtime: { nextHitBonus: 0, nextHitElementIds: new Set() },
     } as unknown as BallEntity
     const brick = { data: { hp: 2, maxHp: 5 } } as unknown as BrickView
     expect(new DamageResolver().resolve(ball, brick)).toEqual({
-      damage: 2, destroyed: true, attack: 10, elementId: 'neutral',
+      damage: 2, destroyed: true, attack: 10, elementIds: [],
     })
     expect(brick.data.hp).toBe(0)
   })
 
-  it('consumes fire and exposes the full attack for one penetration hit', () => {
+  it('combines permanent and temporary elements, then consumes only temporary state', () => {
     const ball = {
-      build: { baseAttack: 2, formId: 'normal', elementId: 'neutral', modifierIds: [] },
-      runtime: { nextHitBonus: 3, nextHitElementId: 'fire', speedOverride: 520 },
+      build: { baseAttack: 2, formId: 'normal', elementIds: ['water'], modifierIds: [] },
+      runtime: { nextHitBonus: 3, nextHitElementIds: new Set(['fire', 'electric']), speedOverride: 520 },
     } as unknown as BallEntity
     const primary = { data: { hp: 8, maxHp: 8 } } as unknown as BrickView
     const secondary = { data: { hp: 9, maxHp: 9 } } as unknown as BrickView
     const resolver = new DamageResolver()
     const result = resolver.resolve(ball, primary)
-    expect(result).toEqual({ damage: 5, destroyed: false, attack: 5, elementId: 'fire' })
+    expect(result).toEqual({ damage: 5, destroyed: false, attack: 5, elementIds: ['fire', 'water', 'electric'] })
     expect(resolver.applyDamage(secondary, result.attack)).toEqual({ damage: 5, destroyed: false })
     expect(secondary.data.hp).toBe(4)
     expect(ball.runtime.nextHitBonus).toBe(0)
-    expect(ball.runtime.nextHitElementId).toBe('neutral')
+    expect(ball.runtime.nextHitElementIds.size).toBe(0)
+    expect(ball.build.elementIds).toEqual(['water'])
     expect(ball.runtime.speedOverride).toBeUndefined()
   })
 })
@@ -73,8 +74,13 @@ describe('reward system', () => {
     expect(fire).toEqual({ type: 'platform', platformType: 'fire' })
   })
 
+  it('offers the electric platform as its own reward entry', () => {
+    const [electric] = new RewardSystem(() => 0.55).createOptions(session())
+    expect(electric).toEqual({ type: 'platform', platformType: 'electric' })
+  })
+
   it('can draw the new paddle and starting-ball options', () => {
-    const values = [0.8, 0.65]
+    const values = [0.8, 0.7]
     const [paddle, startingBall] = new RewardSystem(() => values.shift() ?? 0).createOptions(session())
     expect(paddle).toEqual({ type: 'paddle-width', amount: 20 })
     expect(startingBall).toEqual({ type: 'starting-ball', amount: 1 })
